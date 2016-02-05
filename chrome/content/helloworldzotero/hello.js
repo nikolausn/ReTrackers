@@ -28,7 +28,6 @@ Zotero.HelloWorldZotero = {
 				['Simon', 'Kornblith', 'programmer']
 			],
 			version: '1.0.1',
-			company: 'Center for History and New Media',
 			place: 'Fairfax, VA',
 			url: 'http://www.zotero.org'
 		};
