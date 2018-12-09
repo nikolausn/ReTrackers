@@ -8,11 +8,85 @@ if (typeof Zotero === 'undefined') {
 
 Zotero.RetracterZotero = {};
 
-Zotero.RetracterZotero.resetState = function(){
-
+Zotero.RetracterZotero.resetState = function () {
 }
 
-Zotero.RetracterZotero.checkRetracted = function(){
+Zotero.RetracterZotero.init = function () {
+    // Register the callback in Zotero as an item observer
+    var notifierID = Zotero.Notifier.registerObserver(this.notifierCallback, ['sync']);
+
+    Zotero.debug('Retracters Plugin, grabbing retracted paper'+notifierID);
+
+    // Unregister callback when the window closes (important to avoid a memory leak)
+    window.addEventListener('unload', function (e) {
+        Zotero.Notifier.unregisterObserver(notifierID);
+    }, false);
+};
+
+/*
+ checking retracted items whenever sync button executed
+ using notifierCallback on item observer
+ */
+
+Zotero.RetracterZotero.notifierCallback = {
+    notify: function (event, type, ids, extraData) {
+        Zotero.debug("Retracter event: "+event);
+        Zotero.debug("Retracter type: "+type);
+        Zotero.debug("Retracter ids: "+ids);
+
+        if(event==='finish'){
+            // fetch all zotero items
+            Zotero.debug("Retracter, checking all items")
+            items = Zotero.Items.getAll(1,false,true);
+            //items = Zotero.Items.getAll();
+            //zotlib = Zotero.Libraries.getAll();
+            Zotero.debug("Retracter items: "+JSON.stringify(items));
+            items.then(responses => responses.forEach(
+                    response => Zotero.debug("Retracter item: "+JSON.stringify(response))
+            ));
+            //Zotero.debug("Retracter libraries: "+JSON.stringify(zotlib));
+            //for (item of zotlib) {
+            //    Zotero.debug("Retracter item: "+JSON.stringify(item))
+            //}
+        }
+
+        /*
+        if (event == 'add' || event == 'modify') {
+            var items = Zotero.Items.get(ids);
+            var item, url, date;
+            var today = new Date();
+
+            for (item of items) {
+                url = item.getField('url');
+                date = item.getField('date');
+                console.log('url=' + url, ', date=' + date);
+                if (url && !date) {
+                    var req = new XMLHttpRequest();
+                    req.open('GET', url, false);
+                    req.send(null);
+                    if (req.status == 200) {
+                        date = req.getResponseHeader("Last-Modified");
+                        if (date && date != '') {
+                            try {
+                                date = new Date(date);
+                                if (date.year !== 'undefined' && date.getDate() != today.getDate() && date.getMonth() != today.getMonth() && date.getYear() != today.getYear()) {
+                                    date = date.getFullYear() + '-' + (date.getMonth() + 1) + '-' + date.getDate();
+                                    item.setField('date', date);
+                                    item.save();
+                                }
+                            } catch (err) {
+                                console.log('Could not set date "' + date + '": ' + err);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+         */
+    }
+};
+
+Zotero.RetracterZotero.checkRetracted = function () {
     Zotero.Items.getAll().forEach(function (item) {
         if (item.isRegularItem() && !item.isCollection()) {
             var libraryId = item.getField('libraryID');
@@ -25,7 +99,12 @@ Zotero.RetracterZotero.checkRetracted = function(){
     });
 }
 
-Zotero.RetracterZotero.init = function(){
+// Initialize the utility
+window.addEventListener('load', function(e) { Zotero.RetracterZotero.init(); }, false);
+
+
+/*
+Zotero.RetracterZotero.init = function () {
 
 }
 
@@ -45,12 +124,12 @@ Zotero.RetracterZotero = {
         var notifierID = Zotero.Notifier.registerObserver(this.notifierCallback, ['item']);
 
         // Unregister callback when the window closes (important to avoid a memory leak)
-        window.addEventListener('unload', function(e) {
+        window.addEventListener('unload', function (e) {
             Zotero.Notifier.unregisterObserver(notifierID);
         }, false);
     },
 
-    insertHello: function() {
+    insertHello: function () {
         var data = {
             title: "Zotero",
             company: "Center for History and New Media",
@@ -67,7 +146,7 @@ Zotero.RetracterZotero = {
 
     // Callback implementing the notify() method to pass to the Notifier
     notifierCallback: {
-        notify: function(event, type, ids, extraData) {
+        notify: function (event, type, ids, extraData) {
             if (event == 'add' || event == 'modify' || event == 'delete') {
                 // Increment a counter every time an item is changed
                 Zotero.HelloWorldZotero.DB.query("UPDATE changes SET num = num + 1");
@@ -82,7 +161,11 @@ Zotero.RetracterZotero = {
 
                 // Loop through array of items and grab titles
                 var titles = [];
-                for each(var item in items) {
+                for each(var item
+            in
+                items
+            )
+                {
                     // For deleted items, get title from passed data
                     if (event == 'delete') {
                         titles.push(item.old.title ? item.old.title : '[No title]');
@@ -98,7 +181,7 @@ Zotero.RetracterZotero = {
 
                 // Get the localized string for the notification message and
                 // append the titles of the changed items
-                var stringName = 'notification.item' + (titles.length==1 ? '' : 's');
+                var stringName = 'notification.item' + (titles.length == 1 ? '' : 's');
                 switch (event) {
                     case 'add':
                         stringName += "Added";
@@ -113,8 +196,7 @@ Zotero.RetracterZotero = {
                         break;
                 }
 
-                var str = document.getElementById('hello-world-zotero-strings').
-                    getFormattedString(stringName, [titles.length]) + ":\n\n" +
+                var str = document.getElementById('hello-world-zotero-strings').getFormattedString(stringName, [titles.length]) + ":\n\n" +
                     titles.join("\n");
             }
 
@@ -126,4 +208,7 @@ Zotero.RetracterZotero = {
 };
 
 // Initialize the utility
-window.addEventListener('load', function(e) { Zotero.HelloWorldZotero.init(); }, false);
+window.addEventListener('load', function (e) {
+    Zotero.HelloWorldZotero.init();
+}, false);
+*/
