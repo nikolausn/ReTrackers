@@ -14,19 +14,229 @@ Zotero.RetracterZotero.resetState = function () {
 Zotero.RetracterZotero.init = function () {
     // Register the callback in Zotero as an item observer
     var notifierID = Zotero.Notifier.registerObserver(this.notifierCallback, ['sync']);
+    var notifierItemChange = Zotero.Notifier.registerObserver(this.notifierItemCallback, ['collection', 'search', 'item', 'collection-item', 'item-tag', 'tag',
+        'group', 'relation', 'feed', 'feedItem']);
 
     Zotero.debug('Retracters Plugin, grabbing retracted paper' + notifierID);
+    Zotero.debug('Retracters Plugin, grabbing retracted paper' + notifierItemChange);
 
     // Unregister callback when the window closes (important to avoid a memory leak)
     window.addEventListener('unload', function (e) {
         Zotero.Notifier.unregisterObserver(notifierID);
+        Zotero.Notifier.unregisterObserver(notifierItemChange);
     }, false);
+
+
+
+    ZoteroPane_Local.itemSelected = function (event) {
+        Zotero.debug("Retracter: new item selected event");
+        var item_box = document.getElementById('zotero-editpane-item-box');
+        Zotero.debug("Document: " + item_box.toSource());
+
+        return Zotero.Promise.coroutine(function* () {
+            // Don't select item until items list has loaded
+            //
+            // This avoids an error if New Item is used while the pane is first loading.
+            var promise = this.itemsView.waitForLoad();
+            if (promise.isPending()) {
+                yield promise;
+            }
+
+            if (!this.itemsView || !this.itemsView.selection) {
+                Zotero.debug("Items view not available in itemSelected", 2);
+                return false;
+            }
+
+            var selectedItems = this.itemsView.getSelectedItems();
+
+            // Display buttons at top of item pane depending on context. This needs to run even if the
+            // selection hasn't changed, because the selected items might have been modified.
+            this.updateItemPaneButtons(selectedItems);
+
+            this.updateQuickCopyCommands(selectedItems);
+
+            // Check if selection has actually changed. The onselect event that calls this
+            // can be called in various situations where the selection didn't actually change,
+            // such as whenever selectEventsSuppressed is set to false.
+            var ids = selectedItems.map(item => item.id);
+            ids.sort();
+            if (ids.length && Zotero.Utilities.arrayEquals(_lastSelectedItems, ids)) {
+                return false;
+            }
+            _lastSelectedItems = ids;
+
+            var tabs = document.getElementById('zotero-view-tabbox');
+
+            // save note when switching from a note
+            if (document.getElementById('zotero-item-pane-content').selectedIndex == 2) {
+                // TODO: only try to save when selected item is different
+                yield document.getElementById('zotero-note-editor').save();
+            }
+
+            var collectionTreeRow = this.getCollectionTreeRow();
+            // I don't think this happens in normal usage, but it can happen during tests
+            if (!collectionTreeRow) {
+                return false;
+            }
+
+            // Single item selected
+            if (selectedItems.length == 1) {
+                var item = selectedItems[0];
+
+                if (item.isNote()) {
+                    ZoteroItemPane.onNoteSelected(item, this.collectionsView.editable);
+                } else
+
+                if (item.isAttachment()) {
+                    var attachmentBox = document.getElementById('zotero-attachment-box');
+                    attachmentBox.mode = this.collectionsView.editable ? 'edit' : 'view';
+                    attachmentBox.item = item;
+
+                    document.getElementById('zotero-item-pane-content').selectedIndex = 3;
+                }
+
+                // Regular item
+                else {
+                    var isCommons = collectionTreeRow.isBucket();
+
+                    document.getElementById('zotero-item-pane-content').selectedIndex = 1;
+                    var tabBox = document.getElementById('zotero-view-tabbox');
+
+                    // Reset tab when viewing a feed item, which only has the info tab
+                    if (item.isFeedItem) {
+                        tabBox.selectedIndex = 0;
+                    }
+
+                    var pane = tabBox.selectedIndex;
+                    tabBox.firstChild.hidden = isCommons;
+
+                    var button = document.getElementById('zotero-item-show-original');
+                    if (isCommons) {
+                        button.hidden = false;
+                        button.disabled = !this.getOriginalItem();
+                    } else
+                    {
+                        button.hidden = true;
+                    }
+
+                    if (this.collectionsView.editable) {
+                        yield ZoteroItemPane.viewItem(item, null, pane);
+                        tabs.selectedIndex = document.getElementById('zotero-view-item').selectedIndex;
+                    } else
+                    {
+                        yield ZoteroItemPane.viewItem(item, 'view', pane);
+                        tabs.selectedIndex = document.getElementById('zotero-view-item').selectedIndex;
+                    }
+
+                    if (item.isFeedItem) {
+                        // Too slow for now
+                        // if (!item.isTranslated) {
+                        // 	item.translate();
+                        // }
+                        this.updateReadLabel();
+                        this.startItemReadTimeout(item.id);
+                    }
+                }
+            }
+            // Zero or multiple items selected
+            else {
+                if (collectionTreeRow.isFeed()) {
+                    this.updateReadLabel();
+                }
+
+                let count = selectedItems.length;
+
+                // Display duplicates merge interface in item pane
+                if (collectionTreeRow.isDuplicates()) {
+                    if (!collectionTreeRow.editable) {
+                        if (count) {
+                            var msg = Zotero.getString('pane.item.duplicates.writeAccessRequired');
+                        } else
+                        {
+                            var msg = Zotero.getString('pane.item.selected.zero');
+                        }
+                        this.setItemPaneMessage(msg);
+                    } else
+                    if (count) {
+                        document.getElementById('zotero-item-pane-content').selectedIndex = 4;
+
+                        // Load duplicates UI code
+                        if (typeof Zotero_Duplicates_Pane == 'undefined') {
+                            Zotero.debug("Loading duplicatesMerge.js");
+                            Components.classes["@mozilla.org/moz/jssubscript-loader;1"].
+                            getService(Components.interfaces.mozIJSSubScriptLoader).
+                            loadSubScript("chrome://zotero/content/duplicatesMerge.js");
+                        }
+
+                        // On a Select All of more than a few items, display a row
+                        // count instead of the usual item type mismatch error
+                        var displayNumItemsOnTypeError = count > 5 && count == this.itemsView.rowCount;
+
+                        // Initialize the merge pane with the selected items
+                        Zotero_Duplicates_Pane.setItems(selectedItems, displayNumItemsOnTypeError);
+                    } else
+                    {
+                        var msg = Zotero.getString('pane.item.duplicates.selectToMerge');
+                        this.setItemPaneMessage(msg);
+                    }
+                }
+                // Display label in the middle of the item pane
+                else {
+                    if (count) {
+                        var msg = Zotero.getString('pane.item.selected.multiple', count);
+                    } else
+                    {
+                        var rowCount = this.itemsView.rowCount;
+                        var str = 'pane.item.unselected.';
+                        switch (rowCount) {
+                            case 0:
+                                str += 'zero';
+                                break;
+                            case 1:
+                                str += 'singular';
+                                break;
+                            default:
+                                str += 'plural';
+                                break;}
+
+                        var msg = Zotero.getString(str, [rowCount]);
+                    }
+
+                    this.setItemPaneMessage(msg);
+
+                    return false;
+                }
+            }
+
+            return true;
+        }.bind(this))().
+        catch(function (e) {
+            Zotero.logError(e);
+            this.displayErrorMessage();
+            throw e;
+        }.bind(this)).
+        finally(function () {
+            return this.itemsView.runListeners('select');
+        }.bind(this));
+    };
+
+
 };
 
 /*
  checking retracted items whenever sync button executed
  using notifierCallback on item observer
  */
+
+Zotero.RetracterZotero.notifierItemCallback = {
+    notify: function (event, type, ids, extraData) {
+        Zotero.debug("Retracter item event: " + event);
+        Zotero.debug("Retracter item type: " + type);
+        Zotero.debug("Retracter item ids: " + ids);
+        //var item_box = document.getElementById("item-box");
+        //Zotero.debug("Document: " + JSON.stringify(item_box));
+    }
+}
 
 Zotero.RetracterZotero.notifierCallback = {
     notify: function (event, type, ids, extraData) {
@@ -46,10 +256,42 @@ Zotero.RetracterZotero.notifierCallback = {
 
             items.then(responses => responses.forEach(
                 response => {
-                var localResp = response;
+                var localResp = JSON.parse(JSON.stringify(response));
+                //Zotero.debug("Retracter fetching item: " + response.toSource());
                 Zotero.debug("Retracter fetching item: " + JSON.stringify(localResp));
-                Zotero.debug("Retracter title: "+localResp["title"]);
+                Zotero.debug("Retracter title: "+ localResp.title);
                 Zotero.debug("fetch retraction data");
+
+                /*
+                if(localResp.hasOwnProperty("DOI")&&localResp.hasOwnProperty("title")){
+                    //const url = "http://retractiondatabase.org/RetractionSearch.aspx#?ttl=" + localResp["title"];
+                    //const url = "http://retractiondatabase.org/RetractionSearch.aspx";
+                    const url = 'https://www.ncbi.nlm.nih.gov/pubmed/?term="'+localResp.title+'"';
+
+                    var xhr = new XMLHttpRequest();
+                    //xhr.open('POST', url, true);
+                    xhr.open('GET', url, true);
+
+                    // If specified, responseType must be empty string or "text"
+                    xhr.responseType = 'text';
+                    xhr.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
+
+
+                    xhr.onload = function () {
+                        if (xhr.readyState === xhr.DONE) {
+                            if (xhr.status === 200) {
+                                //Zotero.debug("Retracter resp: "+xhr.response);
+                                Zotero.debug("Retracter text: "+localResp.title+" "+xhr.responseText);
+                            }
+                        }
+                    };
+                    //xhr.send("txtSrchTitle="+localResp["title"]);
+                    xhr.send(null);
+                }
+                */
+
+
+                /*
                 const url = "http://retractiondatabase.org/RetractionSearch.aspx#?ttl=" + localResp["title"];
                 var xhr = new XMLHttpRequest();
                 xhr.open('GET', url, true);
@@ -66,40 +308,8 @@ Zotero.RetracterZotero.notifierCallback = {
                     }
                 };
                 xhr.send(null);
+                */
         }));
-            /*
-            items.then(responses => responses.forEach(
-                response => {
-                    Zotero.debug("Retracter fetching item: " + JSON.stringify(response));
-                    const url = "http://retractiondatabase.org/RetractionSearch.aspx#?ttl=" + response.title;
-                    fetch(url, {
-                        method: "GET"
-                    }).then(
-                        response = > response.text(); // .json(), etc.
-                        // same as function(response) {return response.text();}
-                    ).then(
-                        html = > Zoterp.debug("Retracter html: " + html);
-                    );
-                }));
-            */
-        /*
-         items.then(responses => responses.forEach(
-         function(response){
-         //var xhr = new XMLHttpRequest();
-         //xhr.ge
-         Zotero.debug("Retracter fetching item: " + JSON.stringify(response));
-         const url = "http://retractiondatabase.org/RetractionSearch.aspx#?ttl="+response.title;
-         fetch(url, {
-         method : "GET"
-         }).then(
-         response => response.text(); // .json(), etc.
-         // same as function(response) {return response.text();}
-         ).then(
-         html => Zoterp.debug("Retracter html: "+html);
-         );
-         }
-         ));
-         */
 
         //Zotero.debug("Retracter libraries: "+JSON.stringify(zotlib));
         //for (item of zotlib) {
