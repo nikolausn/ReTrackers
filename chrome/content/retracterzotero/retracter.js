@@ -30,8 +30,6 @@ Zotero.RetracterZotero.init = function () {
 
     ZoteroPane_Local.itemSelected = function (event) {
         Zotero.debug("Retracter: new item selected event");
-        var item_box = document.getElementById('zotero-editpane-item-box');
-        Zotero.debug("Document: " + item_box.toSource());
 
         return Zotero.Promise.coroutine(function* () {
             // Don't select item until items list has loaded
@@ -216,6 +214,32 @@ Zotero.RetracterZotero.init = function () {
             throw e;
         }.bind(this)).
         finally(function () {
+            var item_box = document.getElementById('zotero-editpane-item-box');
+            Zotero.debug("Document: " + JSON.stringify(item_box));
+            Zotero.debug("Item Type Id: " + item_box.item.itemTypeID);
+            var titleFieldID = Zotero.ItemFields.getFieldIDFromTypeAndBase(item_box.item.itemTypeID, 'title');
+            var field = item_box._dynamicFields.getElementsByAttribute('fieldname', Zotero.ItemFields.getName(titleFieldID)).item(0);
+            //var field = item_box.getElementsByAttribute('fieldname', "itemType").item(0);
+            //Zotero.debug("field: " + JSON.stringify(field));
+            let label = document.createElement("label");
+            label.setAttribute('fieldname', "Retracted");
+            label.setAttribute('value',"Retracted")
+            label.setAttribute('style',"color:red")
+            let valueElement = document.createElement("label");
+            valueElement.setAttribute('fieldname', "RetractedVal");
+            valueElement.setAttribute('value',"This Paper is Retracted")
+            valueElement.setAttribute('style',"color:red")
+            //valueElement.removeEventListener('click');
+            //item_box.addDynamicRow(label,valueElement,field)
+            /*
+            var row = document.createElement("row");
+            row.appendChild(label);
+            row.appendChild(valueElement);
+            item_box.insertBefore(row, field)
+            */
+            row = item_box.addDynamicRow(label,valueElement,field);
+            Zotero.debug("Row: " + label.toSource());
+
             return this.itemsView.runListeners('select');
         }.bind(this));
     };
