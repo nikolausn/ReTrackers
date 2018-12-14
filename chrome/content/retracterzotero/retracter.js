@@ -8,25 +8,70 @@ if (typeof Zotero === 'undefined') {
 
 Zotero.RetracterZotero = {};
 
+Zotero.RetracterZotero.DB = null;
+
 Zotero.RetracterZotero.resetState = function () {
 }
 
 Zotero.RetracterZotero.init = function () {
+    try{
+        // init database
+        Zotero.DataDirectory._dir = Zotero.DataDirectory.defaultDir;
+        this.DB = new Zotero.DBConnection('retracers');
+        //Zotero.debug("retract aha: "+this.DB.tableExists('retracted'));
+
+        // Create retracted table
+        this.DB.tableExists("retracted").then(function(resp){
+            Zotero.debug("create retracted table "+resp);
+            if(!resp){
+                try{
+                    var test = Zotero.RetracterZotero.DB.queryAsync("CREATE TABLE retracted (item_id text,retracted integer)");
+
+                    test.then(function(resp){
+                        Zotero.debug("create retracted table "+resp);
+                    }).catch(function(err){
+                        Zotero.debug("create retracted table error "+err);
+                    });
+
+                }catch(err){
+                    Zotero.debug("Retracters: Error create table "+err);
+                }
+            };
+        });
+
+        // Create retracted cache table
+        this.DB.tableExists("retracter_cache").then(function(resp){
+            Zotero.debug("create retracter_cache table "+resp);
+            if(!resp){
+                //this.DB.query("CREATE TABLE retracted (item_id text,retracted integer);");
+                var test = Zotero.RetracterZotero.DB.queryAsync("CREATE TABLE retracter_cache (title text,doi text,retracted_status text,derived_from text,expiration_date real)");
+
+                test.then(function(resp){
+                    Zotero.debug("create retracter_cache table "+resp);
+                }).catch(function(err){
+                    Zotero.debug("create retracter_cache table error "+err);
+                });
+
+            };
+        });
+    }catch(err){
+        Zotero.debug("Retracters: Error create table "+err);
+    }
+
     // Register the callback in Zotero as an item observer
     var notifierID = Zotero.Notifier.registerObserver(this.notifierCallback, ['sync']);
-    var notifierItemChange = Zotero.Notifier.registerObserver(this.notifierItemCallback, ['collection', 'search', 'item', 'collection-item', 'item-tag', 'tag',
-        'group', 'relation', 'feed', 'feedItem']);
+    //var notifierItemChange = Zotero.Notifier.registerObserver(this.notifierItemCallback, ['collection', 'search', 'item', 'collection-item', 'item-tag', 'tag',
+    //    'group', 'relation', 'feed', 'feedItem']);
 
     Zotero.debug('Retracters Plugin, grabbing retracted paper' + notifierID);
-    Zotero.debug('Retracters Plugin, grabbing retracted paper' + notifierItemChange);
+    //Zotero.debug('Retracters Plugin, grabbing retracted paper' + notifierItemChange);
 
     // Unregister callback when the window closes (important to avoid a memory leak)
     window.addEventListener('unload', function (e) {
+        Zotero.RetracterZotero.DB.closeDatabase();
         Zotero.Notifier.unregisterObserver(notifierID);
-        Zotero.Notifier.unregisterObserver(notifierItemChange);
+        //Zotero.Notifier.unregisterObserver(notifierItemChange);
     }, false);
-
-
 
     ZoteroPane_Local.itemSelected = function (event) {
         Zotero.debug("Retracter: new item selected event");
@@ -313,6 +358,7 @@ Zotero.RetracterZotero.notifierCallback = {
                     xhr.send(null);
                 }
                 */
+
 
 
                 /*
