@@ -312,6 +312,181 @@ Zotero.RetracterZotero.notifierItemCallback = {
     }
 }
 
+Zotero.RetracterZotero.updateRetracterCache = function(title,retractedStatus,derivedFrom,expirationDate){
+    var params = [retractedStatus,derivedFrom,expirationDate,title];
+    return Zotero.RetracterZotero.DB.queryAsync("UPDATE retracter_cache SET retracted_status=?,derived_from=?,expiration_date=? WHERE title=?",params);
+}
+
+Zotero.RetracterZotero.updateRetracted= function(itemId,retracted){
+    var params = [retracted,itemId];
+    return Zotero.RetracterZotero.DB.queryAsync("UPDATE retracted set retracted=? WHERE item_id=?",params);
+}
+
+Zotero.RetracterZotero.insertRetracted= function(itemId,retracted){
+    var params = [itemId,retracted];
+    return Zotero.RetracterZotero.DB.queryAsync("INSERT INTO retracted VALUES (?,?)",params);
+}
+
+Zotero.RetracterZotero.insertRetractedCache= function(title,doi,retractedStatus,derivedFrom,expirationDate){
+    var params = [title,doi,retractedStatus,derivedFrom,expirationDate];
+    return Zotero.RetracterZotero.DB.queryAsync("INSERT INTO retracter_cache VALUES (?,?,?,?,?)",params)
+}
+
+/*
+Zotero.RetracterZotero.findFromPubmed = Zotero.Promise.coroutine(function* (title,doi){
+     // Check Pubmed
+     const url = 'https://www.ncbi.nlm.nih.gov/pubmed/?term="'+title+'"';
+
+     var xhr = new XMLHttpRequest();
+     //xhr.open('POST', url, true);
+     xhr.open('GET', url, true);
+
+     // If specified, responseType must be empty string or "text"
+     xhr.responseType = 'text';
+     xhr.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
+
+
+     xhr.onload = function () {
+         if (xhr.readyState === xhr.DONE) {
+             if (xhr.status === 200) {
+                //Zotero.debug("Retracter resp: "+xhr.response);
+                //Zotero.debug("Retracter text: "+localResp.title+" "+xhr.responseText);
+                var xhrResp = yield xhr.responseText;
+             }
+         }else{
+             var xhrResp = yield false;
+         }
+     };
+     //xhr.send("txtSrchTitle="+localResp["title"]);
+     xhr.send(null);
+});
+*/
+
+
+Zotero.RetracterZotero.findFromPubmed = function(title,doi){
+    // Check Pubmed
+    var returnPromise = new Zotero.Promise(function(resolve,reject){
+        const url = 'https://www.ncbi.nlm.nih.gov/pubmed/?term="'+title+'"';
+
+        var xhr = new XMLHttpRequest();
+        //xhr.open('POST', url, true);
+        xhr.open('GET', url, true);
+
+        // If specified, responseType must be empty string or "text"
+        xhr.responseType = 'text';
+        xhr.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
+
+
+        xhr.onload = function () {
+            if (xhr.readyState === xhr.DONE) {
+                if (xhr.status === 200) {
+                    //Zotero.debug("Retracter resp: "+xhr.response);
+                    //Zotero.debug("Retracter text: "+localResp.title+" "+xhr.responseText);
+                    resolve(xhr.responseText);
+                }
+            }else{
+                resolve(false);
+            }
+        };
+        //xhr.send("txtSrchTitle="+localResp["title"]);
+        xhr.send(null);
+    });
+
+    return returnPromise;
+};
+
+Zotero.RetracterZotero.checkRetracted = function(itemId,title,doi) {
+    // Check from retracted table if the itemId exist
+    Zotero.RetracterZotero.DB.queryAsync("SELECT * FROM retracted WHERE item_id=?",itemId).then(async function(item_check){
+        Zotero.debug("Retracter item check: "+item_check.length);
+        if(item_check.length>0){
+            //if found
+            // Zotero.RetracterZotero.DB.queryAsync("CREATE TABLE retracted (item_id text,retracted integer)");
+            if(item_check[0]["retracted"]=="U"){
+                // if unknown
+                // look at the retraction cache
+                var params = [title];
+                // Check in the retracter cache
+                Zotero.RetracterZotero.DB.queryAsync("SELECT * FROM retracter_cache WHERE title=?",params).then(async function(items){
+                    if(items.length>0){
+                        // Check expiration
+                        var now = new Date();
+                        if(now.getTime()>items[0]["expiration_date"]){
+                            // check local data
+                            var find = "U";
+                            var find_from = "U";
+
+                            if(local_data.indexOf(title)>=0){
+                                find = "R";
+                                find_from = "L"
+                            }
+
+                            //if not found in local, check pubmed
+                            if(find=="U"){
+                                /*
+                                Zotero.RetracterZotero.findFromPubmed(title,doi).then(function(xhrText){
+                                    if(xhrText){
+                                        Zotero.debug("Retracter "+title+": "+xhrText);
+                                    }
+                                });
+                                */
+                                var xhrText = await Zotero.RetracterZotero.findFromPubmed(title,doi);
+                                Zotero.debug("Retracter "+title+": "+xhrText);
+                            }
+
+                            // Refresh expiration date
+                            now.setDate(now.getDate()+7);
+
+                            //var params = [find,find_from,now.getTime(),localResp.title];
+                            //Zotero.RetracterZotero.DB.queryAsync("UPDATE retracter_cache SET retracted_status=?,derived_from=?,expiration_date=? WHERE title=?",params)
+                            Zotero.RetracterZotero.updateRetracterCache(localResp.title,find,find_from,now.getTime());
+                            //var params = [find,localResp.key];
+                            //Zotero.RetracterZotero.DB.queryAsync("UPDATE retracted set retracted=? WHERE item_id=?",params)
+                            Zotero.RetracterZotero.updateRetracted(localResp.key,find);
+                        }
+                    }
+                });
+            }
+        }else{
+            // if not found
+            // check local data
+            var find = "U";
+            var find_from = "U";
+
+            if(local_data.indexOf(title)>=0){
+                find = "R";
+                find_from = "L"
+            }
+
+            if(find=="U"){
+                /*
+                Zotero.RetracterZotero.findFromPubmed(title,doi).then(function(xhrText){
+                    if(xhrText){
+                        Zotero.debug("Retracter "+title+": "+xhrText);
+                    }
+                });
+                */
+
+               var xhrText = await Zotero.RetracterZotero.findFromPubmed(title,doi);
+               Zotero.debug("Retracter "+title+": "+xhrText);
+            }
+            // set expiration date for cache
+            var d = new Date();
+            // add 7 days for expiration time
+            d.setDate(d.getDate()+7);
+
+            //var params = [localResp.title,localResp.DOI,find,find_from,d.getTime()];
+            //Zotero.RetracterZotero.DB.queryAsync("INSERT INTO retracter_cache VALUES (?,?,?,?,?)",params)
+            Zotero.RetracterZotero.insertRetractedCache(title,doi,find,find_from,d.getTime());
+            //var params = [localResp.key,find];
+            //Zotero.RetracterZotero.DB.queryAsync("INSERT INTO retracted VALUES (?,?)",params)
+            Zotero.RetracterZotero.insertRetracted(itemId,find);
+            //CREATE TABLE retracter_cache (title text,doi text,retracted_status text,derived_from text,expiration_date real)
+        }
+    });
+}
+
+
 Zotero.RetracterZotero.notifierCallback = {
     notify: function (event, type, ids, extraData) {
         Zotero.debug("Retracter event: " + event);
@@ -331,139 +506,109 @@ Zotero.RetracterZotero.notifierCallback = {
             items.then(responses => responses.forEach(
                 response => {
                 var localResp = JSON.parse(JSON.stringify(response));
-                //Zotero.debug("Retracter fetching item: " + response.toSource());
-                Zotero.debug("Retracter fetching item: " + JSON.stringify(localResp));
-                Zotero.debug("Retracter title: " + localResp.title);
-                Zotero.debug("fetch retraction data");
+            //Zotero.debug("Retracter fetching item: " + response.toSource());
+            Zotero.debug("Retracter fetching item: " + JSON.stringify(localResp));
+            Zotero.debug("Retracter title: " + localResp.title);
+            Zotero.debug("fetch retraction data");
 
-                if(localResp.hasOwnProperty("DOI")&&localResp.hasOwnProperty("title")) {
-                    try {
-                        // Check the item with retracted local database
-                         Zotero.RetracterZotero.DB.queryAsync("SELECT * FROM retracted WHERE item_id=?",localResp.key).then(function(item_check){
-                            Zotero.debug("Retracter item check: "+item_check.length);
-                            if(item_check.length>0){
-                                //if found
-                                // Zotero.RetracterZotero.DB.queryAsync("CREATE TABLE retracted (item_id text,retracted integer)");
-                                if(item_check[0]["retracted"]=="U"){
-                                    // look at the retraction cache
-                                    var params = [localResp.title];
-                                    Zotero.RetracterZotero.DB.queryAsync("SELECT * FROM retracter_cache WHERE title=?",params).then(function(items){
-                                        if(items.length>0){
-                                            // Check expiration
-                                            var now = new Date();
-                                            if(now.getTime()>items[0]["expiration_date"]){
-                                                // check local data
-                                                var find = "U";
-                                                var find_from = "U";
+            if (localResp.hasOwnProperty("DOI") && localResp.hasOwnProperty("title")) {
+                try {
+                    Zotero.RetracterZotero.checkRetracted(localResp.key, localResp.title, localResp.DOI);
+                    /*
 
-                                                if(local_data.indexOf(localResp["title"])>=0){
-                                                    find = "R";
-                                                    find_from = "L"
-                                                }
+                     // Check the item with retracted local database
+                     Zotero.RetracterZotero.DB.queryAsync("SELECT * FROM retracted WHERE item_id=?",localResp.key).then(function(item_check){
+                     Zotero.debug("Retracter item check: "+item_check.length);
+                     if(item_check.length>0){
+                     //if found
+                     // Zotero.RetracterZotero.DB.queryAsync("CREATE TABLE retracted (item_id text,retracted integer)");
+                     if(item_check[0]["retracted"]=="U"){
+                     // look at the retraction cache
+                     var params = [localResp.title];
+                     Zotero.RetracterZotero.DB.queryAsync("SELECT * FROM retracter_cache WHERE title=?",params).then(function(items){
+                     if(items.length>0){
+                     // Check expiration
+                     var now = new Date();
+                     if(now.getTime()>items[0]["expiration_date"]){
+                     // check local data
+                     var find = "U";
+                     var find_from = "U";
 
-                                                // Refresh expiration date
-                                                now.setDate(now.getDate()+7);
+                     if(local_data.indexOf(localResp["title"])>=0){
+                     find = "R";
+                     find_from = "L"
+                     }
 
-                                                var params = [find,find_from,now.getTime(),localResp.title];
-                                                Zotero.RetracterZotero.DB.queryAsync("UPDATE retracter_cache SET retracted_status=?,derived_from=?,expiration_date=? WHERE title=?",params)
-                                                var params = [find,localResp.key];
-                                                Zotero.RetracterZotero.DB.queryAsync("UPDATE retracted set retracted=? WHERE title=?",params)
-                                            }
-                                        }
-                                    });
-                                }
-                            }else{
-                                // if not found
-                                // check local data
-                                var find = "U";
-                                var find_from = "U";
+                     // Refresh expiration date
+                     now.setDate(now.getDate()+7);
 
-                                if(local_data.indexOf(localResp["title"])>=0){
-                                    find = "R";
-                                    find_from = "L"
-                                }
+                     var params = [find,find_from,now.getTime(),localResp.title];
+                     Zotero.RetracterZotero.DB.queryAsync("UPDATE retracter_cache SET retracted_status=?,derived_from=?,expiration_date=? WHERE title=?",params)
+                     var params = [find,localResp.key];
+                     Zotero.RetracterZotero.DB.queryAsync("UPDATE retracted set retracted=? WHERE title=?",params)
+                     }
+                     }
+                     });
+                     }
+                     }else{
+                     // if not found
+                     // check local data
+                     var find = "U";
+                     var find_from = "U";
 
-                                // set expiration date for cache
-                                var d = new Date();
-                                // add 7 days for expiration time
-                                d.setDate(d.getDate()+7);
+                     if(local_data.indexOf(localResp["title"])>=0){
+                     find = "R";
+                     find_from = "L"
+                     }
 
-                                var params = [localResp.title,localResp.DOI,find,find_from,d.getTime()];
-                                Zotero.RetracterZotero.DB.queryAsync("INSERT INTO retracter_cache VALUES (?,?,?,?,?)",params)
-                                var params = [localResp.key,find];
-                                Zotero.RetracterZotero.DB.queryAsync("INSERT INTO retracted VALUES (?,?)",params)
-                                //CREATE TABLE retracter_cache (title text,doi text,retracted_status text,derived_from text,expiration_date real)
-                            }
-                        });
+                     // set expiration date for cache
+                     var d = new Date();
+                     // add 7 days for expiration time
+                     d.setDate(d.getDate()+7);
 
+                     var params = [localResp.title,localResp.DOI,find,find_from,d.getTime()];
+                     Zotero.RetracterZotero.DB.queryAsync("INSERT INTO retracter_cache VALUES (?,?,?,?,?)",params)
+                     var params = [localResp.key,find];
+                     Zotero.RetracterZotero.DB.queryAsync("INSERT INTO retracted VALUES (?,?)",params)
+                     //CREATE TABLE retracter_cache (title text,doi text,retracted_status text,derived_from text,expiration_date real)
+                     }
+                     });
 
+                     */
 
-
-                        if(!find){
-
-                            /* Check Pubmed */
-                            /*
-                             const url = 'https://www.ncbi.nlm.nih.gov/pubmed/?term="'+localResp.title+'"';
-
-                             var xhr = new XMLHttpRequest();
-                             //xhr.open('POST', url, true);
-                             xhr.open('GET', url, true);
-
-                             // If specified, responseType must be empty string or "text"
-                             xhr.responseType = 'text';
-                             xhr.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
-
-
-                             xhr.onload = function () {
-                                 if (xhr.readyState === xhr.DONE) {
-                                     if (xhr.status === 200) {
-                                     //Zotero.debug("Retracter resp: "+xhr.response);
-                                     Zotero.debug("Retracter text: "+localResp.title+" "+xhr.responseText);
-                                     }
-                                 }
-                             };
-                             //xhr.send("txtSrchTitle="+localResp["title"]);
-                             xhr.send(null);
-
-
-                            find = true;
-                            find_from = "L"
-                            */
-                        }
-
-
-                        /*
-                        fetch("http://retractiondatabase.org/RetractionSearch.aspx?ttl="+localResp.title+"&AspxAutoDetectCookieSupport=1", {
-                            "credentials": "include",
-                            "headers": {
-                                "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/
-                        /*
-                        *;q=0.8",
-                                "accept-language": "en-US,en;q=0.9",
-                                "cache-control": "max-age=0",
-                                "content-type": "application/x-www-form-urlencoded",
-                                "upgrade-insecure-requests": "1"
-                            },
-                            "referrer": "http://retractiondatabase.org/RetractionSearch.aspx?ttl="+localResp.title+"&AspxAutoDetectCookieSupport=1",
-                            "referrerPolicy": "no-referrer-when-downgrade",
-                            "body": "__LASTFOCUS=&__EVENTTARGET=btnSearch&__EVENTARGUMENT=&__VIEWSTATE=1zDnBebp1%2BWs19KahiFQlyeAO5%2BSjjEhYGSjz66r2rnFXA980CQQ0FeraLb56kH4f%2BkgfrzUaXJXMUCeaswkPQddWoqIeI9QUCaSjlP7usmknzkD7SAQR1FYNjVcKgsPWxsjjI2gkox2oyPivHoi0vkxDgTo1I2IiqlyD4S1IWSo2QWcuvnp4zorJJ6Qpm1dCATcf02gmo1bkWkxLzuM73tN4oLePVGk0VlAj0KXazhI3b7Ch4qWc9V7cfyOWPFDAj6IwFvioMQYGtPdnNf%2BR%2FR%2FZrvRZAc1PSrfwRkjcpBAVKzx5I80%2FTCOsw0uhw%2F1NkJw906ZQ5FsSk%2BYEcwzderZPFpEbpOn1SPcejtKtMvuax4riahhsbuGAqeQibW0qqjP2YIdN34Gqqkx%2FSsGOXckcmhQXmG6kcnlNtFnUVba2NJRL%2BaTBkwgk0O7Mq6JFaiCYVzmI5xc%2FwOtM6y4I6ELYPfCNyUmvUeo6x3xRRSZletitmueYvZBUbdSqmLaDQfXl9KGHlK7K%2BDPo%2F2VfXS75iUdN9WLqMwGMgJt%2FgTzJYOoreKzRHTATgantMtJrV1uhLKfQvFvJ51hoPcjsRK1LbdXA2CcpMY7zm2tU%2FpRJmAe2iqXAy%2BSxb0bV%2BOVK3vbQnUZ2TVuZpX0CzdTY8A6bvRmRky55EdC9QyuVj70vSWDkASZZGutQPMn%2F0BN0oVqoB%2BBif6tten6Tr6zpaGsZCGkfuzeOtZ7Wh%2BPZfvVCHI1zPanQo2WJBN4LGA0QEpQApyeaeofTaqU%2B0eEMEPL1TsNVHJjH7%2FlqkNKvmtRBn10mFeM6e5ID52L6wxxIBbHLZ9K%2BoZkGx54EtqBSpJ17J06YlUw33zyfAhJOa98wwgPY7sKFNsFmfxu3EK0Me6j2SsXcKV3%2FbDBvqtQ%2F75AnNsU6c29JkAuTCHXv1PLrNvwtqXHvolVcXgNapCjiHTlCb25%2BAI7w23CUDocBpmMGh2EnwE%2BvYXKEr6GkAHvkQQn7pnZ9f1xlbFVO419DWhOscSoCWOSkqMLOv3%2F4Pz4hWOu98F6ZO3vnDYmSd2wUojWainoj%2BRxOPPSU2%2Flp1dLb2sPtx1yuHVndF8UZM%2FtPN9FkPFGHM7kp0MzvWmPtBcyForYxItYT0lLX7V9MUa12HrGDpoXBPUCfUWsxR%2FzgyEneqADP4pkGo85kmbMmNaPswEzkv9V%2F8mg9bQzutN8kp1J0Vnn2%2FsrL%2BpiT7bo8%2BPGZeJUG0dCFKCy0v%2BtTg7R%2FC1QvjC4ksFeb%2BotYqojZA8DZPNGar0dcGUe1dltTX5EHZDDZMwRySGG2YfqUzYyFXAs0nM63dLDN5bWO1%2BSne86IKBIXImcdxMUIKJYKck13dJjfleuNmdIXrF0MgYorB%2Fzot6zgddEWtNO%2FB52oEtgvcIE6yf5bktUAGkQZBkOM5e8YGyFZQ%2BjyEr9obOYPHmiL4VnvMu9qsO%2BlhgpGoF30JuzrU358p%2B2vO39t1UUQMrX7wUXO8qPrDaLRVzjtPJn%2BJc6JZo7cslHhg1qstPLj8DE9RL0AEMJCqumY9BI3W1BNN791oHXFX77%2FsWl4RnuxAtzuD%2FVIc43dZoLAOavqeGr7mF1tRy5%2BAAizinhxmAhvswXaN%2BELnHcJJJ1Ymbcclu%2Bw16UYMJN8DRP5a%2BqVQmXHxB4lYBHHrOwjFU3pPHDTZXfbOOfmsQ4DuUAxlO2UxJAkv07%2FSPzyw3ZPr%2Bdxiis8V4TeheRgyoH6X81xcJ7r9aKWVcSZiV5sShdVVFQc1CGBCnMKikpyO%2BUNC%2Fd9yb4MYNmVlXbxxCiHoWm5V%2FrZ%2BZvSW1UcCjYZT1LPWf5pQ%2B5zxjPvvCPvsBMY%2BmeadDx0f3t3gH9A%2FMCtDnhXsDEzkirihsjykh1GxijzGph7tX5SLpfg29bGjJi9%2BdkAnrw3DtRlVbkKthlFZN33ggCJdA2HWt73BP3MPsbAuvyX5ypgi8nByphNDeGmA%3D%3D&__VIEWSTATEGENERATOR=F1918523&__VIEWSTATEENCRYPTED=&__EVENTVALIDATION=USi0tYcPks5ntjXZ0EvJLRfUlO98LEQ2WllhusbnvYkiTCQfMjYhXzasuObtIMEphkjC6cCQ0CLiFTRE6F9aHfPDXGOtm41eJj7yZJHylytisfzuD%2Fcu1cbAnpt6xW%2BxBYjsEnNSf9Fd7SdaNJ3Sae56hEjPdGF21adibXwzQ495Kmrl7BmddbAsTj6EAyMje46IJLsg%2BjObNnSSrvjSZFwWm%2BH54KtCFdXM2iPaM7GN3jITn0h5j7jaPSDuKWJGqvJZHWceTvbte13WPeZtd%2FsLxV2cqDmQu2aLHItkdDP%2BC6MLPdhj1MQ84E%2FkKjn7Eq1hx6Zr5RdXGtcWh495yj1Xm6VSxsVrGxIuPc8g8FeWVSNk7gwLQ%2FpngiJo2xVCJ5lkoclfnDAlo4wemxDEwbaIe0uUBVJnNtHpj9AjEJZ9ppWQmhFF3v565jM2cq2o1MtiI0D8TTg7hqXdFnr%2BcKa1LwPzCknOfiwku594NqWyEETvHPkybadjjsxyIwNpxhzR8R%2FqpYLgyIP8kAxr7p8ZwXhRv1UHUpTlCJaQ9Wv6VZmyH%2F1K4J8JMOJd4NwYyrCinhJUr1mm9oRcmy8ycYp8vn6VwuhBAW78Zs84h159x%2FyA07E%2Fflwkah%2BcTju5OZyZnnyKcVD%2FUAvSkikb4dy1qAiG9xtgXdP8Icp5P5UNlh2jAp%2BYGduvQRUxABYbBArC2zKmFfJnV4zdLEk4oh5QrxboecrRqUhJWsVCLbD2SZ%2F%2BP0XdKihuM8ZDDUayOyhPGteRPGLfSeQdFYzj2rV0Y%2BAAhs%2BopN7viCJ176DxgzX068cLP21BO3lJgJjbjzVbUjft38Mifsa4WSSFqNxCACWhHy5Ji21t0BsJQvcl4lkfi4aFRQWCtr88aJ72AYoFX2SoVSNanQsa%2BBkvRbTQz0ZFrXXGAVHZinT9gGsv7%2BMYzIEtmBe4k1IyQgA3eTFsSPpnn2xsqNJjZYiRkbvRhgJqjBgx4sqpm42d6eO7xubedH3Ry%2BLurkf26h45X3eeQ1eutngSJ2l4zWvLvzZ%2BFWPl%2FZKXCO%2FwEjdKaEXjxnXGxpbwrInfbTDraP5r28lh5QAhVZRaD%2FFm1IjL6KiPWVEIDpinR3wKsMVWt61zyHNVB6aTnJIMzMPwv0guH1wyvPWtnjbk6GEZQH8%2F6EIZAllKy1CZVQAECGHEGCKVwATNQ1u8ht5HcG8EmvgPpC8EtNPXNynKFFsFLhtV5p3CCAoAjBucqRD606Thx7mzGTlf%2BPNk89SeNVIAZzEBPw0OjlcNfVGeE2TmsI77O6EoYXw4oECvWGrYZr65GaLgXg3j%2BBh%2BtN2ohOddyriyNLyi9GwWaKxvU0LhulEsrm469Oh8pFMBw2qqjc2%2F9QRnmzLySyY6Emuz80UCEtNjvyO6tASNmPfpnobypaKkVY5kNNKTPQFBVCsVXZ%2FoyenokzZi&txtEmail=&txtPSWD=&txtSrchAuthor=&txtSrchCountry=&txtSrchTitle=" + localResp.title + "&txtSrchReason=&txtSrchSubject=&txtSrchType=&txtSrchJournal=&txtSrchPublisher=&txtSrchInstitution=&txtSrchNotes=&txtSrchAdminNotes=&txtSrchURL=&txtOriginalDateFrom=&txtOriginalDateTo=&txtOriginalPubMedID=&txtOriginalDOI=&txtFromDate=&txtToDate=&txtPubMedID=&txtDOI=&drpNature=&drpSrchPaywalled=&drpUser=&txtCreateFromDate=&txtCreateToDate=&hidClearSearch=&hidSqlParmNames=&hidEmptySqlParmNames=",
-                            "method": "POST",
-                            "mode": "cors"
-                        }).then(function (resp) {
-                            resp.text().then(function (val) {
-                                Zotero.debug(val);
-                                if (val.indexOf("No Retractions") >= 0) {
-                                    Zotero.debug("retracter " + localResp.title + ": found");
-                                } else {
-                                    Zotero.debug("retracter " + localResp.title + ": not found");
-                                }
-                            });
-                        });
-                        */
-                    } catch (err) {
-                        Zotero.debug("Retracters Error: "+err);
-                    }
+                    /*
+                     fetch("http://retractiondatabase.org/RetractionSearch.aspx?ttl="+localResp.title+"&AspxAutoDetectCookieSupport=1", {
+                     "credentials": "include",
+                     "headers": {
+                     "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/
+                    /*
+                     *;q=0.8",
+                     "accept-language": "en-US,en;q=0.9",
+                     "cache-control": "max-age=0",
+                     "content-type": "application/x-www-form-urlencoded",
+                     "upgrade-insecure-requests": "1"
+                     },
+                     "referrer": "http://retractiondatabase.org/RetractionSearch.aspx?ttl="+localResp.title+"&AspxAutoDetectCookieSupport=1",
+                     "referrerPolicy": "no-referrer-when-downgrade",
+                     "body": "__LASTFOCUS=&__EVENTTARGET=btnSearch&__EVENTARGUMENT=&__VIEWSTATE=1zDnBebp1%2BWs19KahiFQlyeAO5%2BSjjEhYGSjz66r2rnFXA980CQQ0FeraLb56kH4f%2BkgfrzUaXJXMUCeaswkPQddWoqIeI9QUCaSjlP7usmknzkD7SAQR1FYNjVcKgsPWxsjjI2gkox2oyPivHoi0vkxDgTo1I2IiqlyD4S1IWSo2QWcuvnp4zorJJ6Qpm1dCATcf02gmo1bkWkxLzuM73tN4oLePVGk0VlAj0KXazhI3b7Ch4qWc9V7cfyOWPFDAj6IwFvioMQYGtPdnNf%2BR%2FR%2FZrvRZAc1PSrfwRkjcpBAVKzx5I80%2FTCOsw0uhw%2F1NkJw906ZQ5FsSk%2BYEcwzderZPFpEbpOn1SPcejtKtMvuax4riahhsbuGAqeQibW0qqjP2YIdN34Gqqkx%2FSsGOXckcmhQXmG6kcnlNtFnUVba2NJRL%2BaTBkwgk0O7Mq6JFaiCYVzmI5xc%2FwOtM6y4I6ELYPfCNyUmvUeo6x3xRRSZletitmueYvZBUbdSqmLaDQfXl9KGHlK7K%2BDPo%2F2VfXS75iUdN9WLqMwGMgJt%2FgTzJYOoreKzRHTATgantMtJrV1uhLKfQvFvJ51hoPcjsRK1LbdXA2CcpMY7zm2tU%2FpRJmAe2iqXAy%2BSxb0bV%2BOVK3vbQnUZ2TVuZpX0CzdTY8A6bvRmRky55EdC9QyuVj70vSWDkASZZGutQPMn%2F0BN0oVqoB%2BBif6tten6Tr6zpaGsZCGkfuzeOtZ7Wh%2BPZfvVCHI1zPanQo2WJBN4LGA0QEpQApyeaeofTaqU%2B0eEMEPL1TsNVHJjH7%2FlqkNKvmtRBn10mFeM6e5ID52L6wxxIBbHLZ9K%2BoZkGx54EtqBSpJ17J06YlUw33zyfAhJOa98wwgPY7sKFNsFmfxu3EK0Me6j2SsXcKV3%2FbDBvqtQ%2F75AnNsU6c29JkAuTCHXv1PLrNvwtqXHvolVcXgNapCjiHTlCb25%2BAI7w23CUDocBpmMGh2EnwE%2BvYXKEr6GkAHvkQQn7pnZ9f1xlbFVO419DWhOscSoCWOSkqMLOv3%2F4Pz4hWOu98F6ZO3vnDYmSd2wUojWainoj%2BRxOPPSU2%2Flp1dLb2sPtx1yuHVndF8UZM%2FtPN9FkPFGHM7kp0MzvWmPtBcyForYxItYT0lLX7V9MUa12HrGDpoXBPUCfUWsxR%2FzgyEneqADP4pkGo85kmbMmNaPswEzkv9V%2F8mg9bQzutN8kp1J0Vnn2%2FsrL%2BpiT7bo8%2BPGZeJUG0dCFKCy0v%2BtTg7R%2FC1QvjC4ksFeb%2BotYqojZA8DZPNGar0dcGUe1dltTX5EHZDDZMwRySGG2YfqUzYyFXAs0nM63dLDN5bWO1%2BSne86IKBIXImcdxMUIKJYKck13dJjfleuNmdIXrF0MgYorB%2Fzot6zgddEWtNO%2FB52oEtgvcIE6yf5bktUAGkQZBkOM5e8YGyFZQ%2BjyEr9obOYPHmiL4VnvMu9qsO%2BlhgpGoF30JuzrU358p%2B2vO39t1UUQMrX7wUXO8qPrDaLRVzjtPJn%2BJc6JZo7cslHhg1qstPLj8DE9RL0AEMJCqumY9BI3W1BNN791oHXFX77%2FsWl4RnuxAtzuD%2FVIc43dZoLAOavqeGr7mF1tRy5%2BAAizinhxmAhvswXaN%2BELnHcJJJ1Ymbcclu%2Bw16UYMJN8DRP5a%2BqVQmXHxB4lYBHHrOwjFU3pPHDTZXfbOOfmsQ4DuUAxlO2UxJAkv07%2FSPzyw3ZPr%2Bdxiis8V4TeheRgyoH6X81xcJ7r9aKWVcSZiV5sShdVVFQc1CGBCnMKikpyO%2BUNC%2Fd9yb4MYNmVlXbxxCiHoWm5V%2FrZ%2BZvSW1UcCjYZT1LPWf5pQ%2B5zxjPvvCPvsBMY%2BmeadDx0f3t3gH9A%2FMCtDnhXsDEzkirihsjykh1GxijzGph7tX5SLpfg29bGjJi9%2BdkAnrw3DtRlVbkKthlFZN33ggCJdA2HWt73BP3MPsbAuvyX5ypgi8nByphNDeGmA%3D%3D&__VIEWSTATEGENERATOR=F1918523&__VIEWSTATEENCRYPTED=&__EVENTVALIDATION=USi0tYcPks5ntjXZ0EvJLRfUlO98LEQ2WllhusbnvYkiTCQfMjYhXzasuObtIMEphkjC6cCQ0CLiFTRE6F9aHfPDXGOtm41eJj7yZJHylytisfzuD%2Fcu1cbAnpt6xW%2BxBYjsEnNSf9Fd7SdaNJ3Sae56hEjPdGF21adibXwzQ495Kmrl7BmddbAsTj6EAyMje46IJLsg%2BjObNnSSrvjSZFwWm%2BH54KtCFdXM2iPaM7GN3jITn0h5j7jaPSDuKWJGqvJZHWceTvbte13WPeZtd%2FsLxV2cqDmQu2aLHItkdDP%2BC6MLPdhj1MQ84E%2FkKjn7Eq1hx6Zr5RdXGtcWh495yj1Xm6VSxsVrGxIuPc8g8FeWVSNk7gwLQ%2FpngiJo2xVCJ5lkoclfnDAlo4wemxDEwbaIe0uUBVJnNtHpj9AjEJZ9ppWQmhFF3v565jM2cq2o1MtiI0D8TTg7hqXdFnr%2BcKa1LwPzCknOfiwku594NqWyEETvHPkybadjjsxyIwNpxhzR8R%2FqpYLgyIP8kAxr7p8ZwXhRv1UHUpTlCJaQ9Wv6VZmyH%2F1K4J8JMOJd4NwYyrCinhJUr1mm9oRcmy8ycYp8vn6VwuhBAW78Zs84h159x%2FyA07E%2Fflwkah%2BcTju5OZyZnnyKcVD%2FUAvSkikb4dy1qAiG9xtgXdP8Icp5P5UNlh2jAp%2BYGduvQRUxABYbBArC2zKmFfJnV4zdLEk4oh5QrxboecrRqUhJWsVCLbD2SZ%2F%2BP0XdKihuM8ZDDUayOyhPGteRPGLfSeQdFYzj2rV0Y%2BAAhs%2BopN7viCJ176DxgzX068cLP21BO3lJgJjbjzVbUjft38Mifsa4WSSFqNxCACWhHy5Ji21t0BsJQvcl4lkfi4aFRQWCtr88aJ72AYoFX2SoVSNanQsa%2BBkvRbTQz0ZFrXXGAVHZinT9gGsv7%2BMYzIEtmBe4k1IyQgA3eTFsSPpnn2xsqNJjZYiRkbvRhgJqjBgx4sqpm42d6eO7xubedH3Ry%2BLurkf26h45X3eeQ1eutngSJ2l4zWvLvzZ%2BFWPl%2FZKXCO%2FwEjdKaEXjxnXGxpbwrInfbTDraP5r28lh5QAhVZRaD%2FFm1IjL6KiPWVEIDpinR3wKsMVWt61zyHNVB6aTnJIMzMPwv0guH1wyvPWtnjbk6GEZQH8%2F6EIZAllKy1CZVQAECGHEGCKVwATNQ1u8ht5HcG8EmvgPpC8EtNPXNynKFFsFLhtV5p3CCAoAjBucqRD606Thx7mzGTlf%2BPNk89SeNVIAZzEBPw0OjlcNfVGeE2TmsI77O6EoYXw4oECvWGrYZr65GaLgXg3j%2BBh%2BtN2ohOddyriyNLyi9GwWaKxvU0LhulEsrm469Oh8pFMBw2qqjc2%2F9QRnmzLySyY6Emuz80UCEtNjvyO6tASNmPfpnobypaKkVY5kNNKTPQFBVCsVXZ%2FoyenokzZi&txtEmail=&txtPSWD=&txtSrchAuthor=&txtSrchCountry=&txtSrchTitle=" + localResp.title + "&txtSrchReason=&txtSrchSubject=&txtSrchType=&txtSrchJournal=&txtSrchPublisher=&txtSrchInstitution=&txtSrchNotes=&txtSrchAdminNotes=&txtSrchURL=&txtOriginalDateFrom=&txtOriginalDateTo=&txtOriginalPubMedID=&txtOriginalDOI=&txtFromDate=&txtToDate=&txtPubMedID=&txtDOI=&drpNature=&drpSrchPaywalled=&drpUser=&txtCreateFromDate=&txtCreateToDate=&hidClearSearch=&hidSqlParmNames=&hidEmptySqlParmNames=",
+                     "method": "POST",
+                     "mode": "cors"
+                     }).then(function (resp) {
+                     resp.text().then(function (val) {
+                     Zotero.debug(val);
+                     if (val.indexOf("No Retractions") >= 0) {
+                     Zotero.debug("retracter " + localResp.title + ": found");
+                     } else {
+                     Zotero.debug("retracter " + localResp.title + ": not found");
+                     }
+                     });
+                     });
+                     */
+                } catch (err) {
+                    Zotero.debug("Retracters Error: " + err);
                 }
+            }
+        }))}}};
 
 
             /*
@@ -519,9 +664,6 @@ Zotero.RetracterZotero.notifierCallback = {
             //    Zotero.debug("Retracter item: "+JSON.stringify(item))
             //}
 
-            }));
-            };
-
         /*
          if (event == 'add' || event == 'modify') {
          var items = Zotero.Items.get(ids);
@@ -555,22 +697,6 @@ Zotero.RetracterZotero.notifierCallback = {
          }
          }
          */
-    }
-}
-;
-
-Zotero.RetracterZotero.checkRetracted = function () {
-    Zotero.Items.getAll().forEach(function (item) {
-        if (item.isRegularItem() && !item.isCollection()) {
-            var libraryId = item.getField('libraryID');
-            if (libraryId == null ||
-                libraryId == '' ||
-                Zotero.Libraries.isEditable(libraryId)) {
-                items.push(item);
-            }
-        }
-    });
-}
 
 // Initialize the utility
 window.addEventListener('load', function (e) {
