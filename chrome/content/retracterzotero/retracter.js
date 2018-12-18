@@ -313,22 +313,22 @@ Zotero.RetracterZotero.notifierItemCallback = {
 }
 
 Zotero.RetracterZotero.updateRetracterCache = function(title,retractedStatus,derivedFrom,expirationDate){
-    var params = [retractedStatus,derivedFrom,expirationDate,title];
+    let params = [retractedStatus,derivedFrom,expirationDate,title];
     return Zotero.RetracterZotero.DB.queryAsync("UPDATE retracter_cache SET retracted_status=?,derived_from=?,expiration_date=? WHERE title=?",params);
 }
 
 Zotero.RetracterZotero.updateRetracted= function(itemId,retracted){
-    var params = [retracted,itemId];
+    let params = [retracted,itemId];
     return Zotero.RetracterZotero.DB.queryAsync("UPDATE retracted set retracted=? WHERE item_id=?",params);
 }
 
 Zotero.RetracterZotero.insertRetracted= function(itemId,retracted){
-    var params = [itemId,retracted];
+    let params = [itemId,retracted];
     return Zotero.RetracterZotero.DB.queryAsync("INSERT INTO retracted VALUES (?,?)",params);
 }
 
 Zotero.RetracterZotero.insertRetractedCache= function(title,doi,retractedStatus,derivedFrom,expirationDate){
-    var params = [title,doi,retractedStatus,derivedFrom,expirationDate];
+    let params = [title,doi,retractedStatus,derivedFrom,expirationDate];
     return Zotero.RetracterZotero.DB.queryAsync("INSERT INTO retracter_cache VALUES (?,?,?,?,?)",params)
 }
 
@@ -382,7 +382,36 @@ Zotero.RetracterZotero.findFromPubmed = function(title,doi){
                 if (xhr.status === 200) {
                     //Zotero.debug("Retracter resp: "+xhr.response);
                     //Zotero.debug("Retracter text: "+localResp.title+" "+xhr.responseText);
-                    resolve(xhr.responseText);
+
+                    let parser = new DOMParser()
+                    let el = parser.parseFromString(xhr.responseText, "text/xml");
+
+                    let rprts = el.getElementsByClassName("rprt");
+
+                    let retractedFound = false;
+                    let pubmedFound = false;
+                    for(let i=0;i<rprts.length;i++){
+                        // check the title, before and after
+                        let responseText = rprts[i].innerText;
+                        let responseLength = responseText.length;
+                        let titleLength = title.length;
+                        let titleIndex = responseText.indexOf(title);
+                        // title not found, then just continue to the next rprt
+                        if(titleIndex<0){
+                            continue;
+                        }
+
+                        let startCut = titleIndex;
+                        let endCut = titleIndex+titleLength;
+                        let checkText = responseText.substr(0,startCut)+responseText.substr(endCut,responseLength);
+                        if(checkText.toLowerCase().indexOf("retract")>=0){
+                            retractedFound = true;
+                            // Retracted text found, break the loop
+                            break;
+                        }
+                    }
+
+                    resolve({"retracted": retractedFound});
                 }
             }else{
                 resolve(false);
@@ -395,7 +424,151 @@ Zotero.RetracterZotero.findFromPubmed = function(title,doi){
     return returnPromise;
 };
 
-Zotero.RetracterZotero.checkRetracted = function(itemId,title,doi) {
+Zotero.RetracterZotero.syncApi = async function(title,doi){
+    var find = "U";
+    var find_from = "U";
+    var now = new Date();
+
+    if (local_data.indexOf(title) >= 0) {
+        find = "R";
+        find_from = "L"
+    }
+    //if not found in local, check pubmed
+    if (find == "U") {
+        var pubmedResult = await Zotero.RetracterZotero.findFromPubmed(title, doi);
+        if(pubmedResult){
+            if(pubmedResult["retracted"]) {
+                find = "R";
+                find_from = "P";
+            }
+        }
+        Zotero.debug("Retracter Pubmed "+title+" : "+ JSON.stringify(pubmedResult));
+        //"Visual evaluation of train-of-four and double burst stimulation, fade at various currents, using a rubber band",
+    }
+    return {"find": find,"findFrom": find_from};
+}
+
+Zotero.RetracterZotero.checkRetracted = async function(itemId,title,doi) {
+    // Check from retracted table if the itemId exist
+    let item_check = await Zotero.RetracterZotero.DB.queryAsync("SELECT * FROM retracted WHERE item_id=?",[itemId]);
+    Zotero.debug("Retracter item check: "+item_check.length);
+    if(item_check.length>0){
+        // if found, query return rows
+        // Zotero.RetracterZotero.DB.queryAsync("CREATE TABLE retracted (item_id text,retracted integer)");
+        //CREATE TABLE retracter_cache (title text,doi text,retracted_status text,derived_from text,expiration_date real)
+        if(item_check[0]["retracted"]=="U") {
+            // if unknown
+            // look at the retraction cache
+            let params = [title];
+            // Check in the retracter cache
+            let items = await Zotero.RetracterZotero.DB.queryAsync("SELECT * FROM retracter_cache WHERE title=?", params);
+
+            let find = "U";
+            let find_from = "U";
+            let now = new Date();
+            if (items.length > 0) {
+                // If title found in the cache
+                // Check expiration
+                if (now.getTime() > items[0]["expiration_date"]) {
+                    // If expired
+                    // check local data
+
+                    /*
+                    if (local_data.indexOf(title) >= 0) {
+                        find = "R";
+                        find_from = "L"
+                    }
+                    //if not found in local, check pubmed
+                    if (find == "U") {
+                        var xhrText = await Zotero.RetracterZotero.findFromPubmed(title, doi);
+                        Zotero.debug("Retracter " + title + ": " + xhrText);
+                    }
+                    */
+                    let result = await Zotero.RetracterZotero.syncApi(title,doi);
+                    find = result["find"];
+                    find_from = result["findFrom"];
+
+                    // Refresh expiration date
+                    now.setDate(now.getDate() + 7);
+
+                    // Update retracter cache
+                    await Zotero.RetracterZotero.updateRetracterCache(title, find, find_from, now.getTime());
+                    // Update retracted
+                    await Zotero.RetracterZotero.updateRetracted(itemId, find);
+                } else {
+                    // If not expired
+                    // set the find and find_from from the items
+                    find = items[0]["retracted_status"];
+                    // Update retracted
+                    await Zotero.RetracterZotero.updateRetracted(itemId, find);
+                }
+            } else {
+                // if it's not in cache
+
+                let result = await Zotero.RetracterZotero.syncApi(title,doi);
+                find = result["find"];
+                find_from = result["findFrom"];
+
+                /*
+                if (local_data.indexOf(title) >= 0) {
+                    find = "R";
+                    find_from = "L"
+                }
+                //if not found in local, check pubmed
+                if (find == "U") {
+                    var xhrText = await Zotero.RetracterZotero.findFromPubmed(title, doi);
+                    Zotero.debug("Retracter " + title + ": " + xhrText);
+                }
+                */
+
+                // Refresh expiration date
+                now.setDate(now.getDate() + 7);
+
+                // Update retracter cache
+                await Zotero.RetracterZotero.insertRetractedCache(title, find, find_from, now.getTime());
+                // Update retracted
+                await Zotero.RetracterZotero.updateRetracted(itemId, find);
+            }
+        }
+    }else{
+        // if not found in the item
+        // check local data
+
+
+        let result = await Zotero.RetracterZotero.syncApi(title,doi);
+        print("Retracters from sync: "+JSON.stringify(result));
+        let find = result["find"];
+        let find_from = result["findFrom"];
+
+        /*
+        var find = "U";
+        var find_from = "U";
+
+        if(local_data.indexOf(title)>=0){
+            find = "R";
+            find_from = "L"
+        }
+        //if not found in local, check pubmed
+        if(find=="U"){
+            var xhrText = await Zotero.RetracterZotero.findFromPubmed(title,doi);
+            Zotero.debug("Retracter "+title+": "+xhrText);
+        }
+        */
+
+        // set expiration date for cache
+        let d = new Date();
+        // add 7 days for expiration time
+        d.setDate(d.getDate()+7);
+
+        await Zotero.RetracterZotero.insertRetractedCache(title,doi,find,find_from,d.getTime());
+        await Zotero.RetracterZotero.insertRetracted(itemId,find);
+        //CREATE TABLE retracter_cache (title text,doi text,retracted_status text,derived_from text,expiration_date real)
+    }
+}
+
+
+
+Zotero.RetracterZotero.checkRetractedOld = function(itemId,title,doi) {
     // Check from retracted table if the itemId exist
     Zotero.RetracterZotero.DB.queryAsync("SELECT * FROM retracted WHERE item_id=?",itemId).then(async function(item_check){
         Zotero.debug("Retracter item check: "+item_check.length);
@@ -611,92 +784,6 @@ Zotero.RetracterZotero.notifierCallback = {
         }))}}};
 
 
-            /*
-             if(localResp.hasOwnProperty("DOI")&&localResp.hasOwnProperty("title")){
-             //const url = "http://retractiondatabase.org/RetractionSearch.aspx#?ttl=" + localResp["title"];
-             //const url = "http://retractiondatabase.org/RetractionSearch.aspx";
-             const url = 'https://www.ncbi.nlm.nih.gov/pubmed/?term="'+localResp.title+'"';
-
-             var xhr = new XMLHttpRequest();
-             //xhr.open('POST', url, true);
-             xhr.open('GET', url, true);
-
-             // If specified, responseType must be empty string or "text"
-             xhr.responseType = 'text';
-             xhr.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
-
-
-             xhr.onload = function () {
-             if (xhr.readyState === xhr.DONE) {
-             if (xhr.status === 200) {
-             //Zotero.debug("Retracter resp: "+xhr.response);
-             Zotero.debug("Retracter text: "+localResp.title+" "+xhr.responseText);
-             }
-             }
-             };
-             //xhr.send("txtSrchTitle="+localResp["title"]);
-             xhr.send(null);
-             }
-             */
-
-
-            /*
-             const url = "http://retractiondatabase.org/RetractionSearch.aspx#?ttl=" + localResp["title"];
-             var xhr = new XMLHttpRequest();
-             xhr.open('GET', url, true);
-
-             // If specified, responseType must be empty string or "text"
-             xhr.responseType = 'text';
-
-             xhr.onload = function () {
-             if (xhr.readyState === xhr.DONE) {
-             if (xhr.status === 200) {
-             Zotero.debug("Retracter resp: "+xhr.response);
-             Zotero.debug("Retracter text: "+xhr.responseText);
-             }
-             }
-             };
-             xhr.send(null);
-             */
-
-            //Zotero.debug("Retracter libraries: "+JSON.stringify(zotlib));
-            //for (item of zotlib) {
-            //    Zotero.debug("Retracter item: "+JSON.stringify(item))
-            //}
-
-        /*
-         if (event == 'add' || event == 'modify') {
-         var items = Zotero.Items.get(ids);
-         var item, url, date;
-         var today = new Date();
-
-         for (item of items) {
-         url = item.getField('url');
-         date = item.getField('date');
-         console.log('url=' + url, ', date=' + date);
-         if (url && !date) {
-         var req = new XMLHttpRequest();
-         req.open('GET', url, false);
-         req.send(null);
-         if (req.status == 200) {
-         date = req.getResponseHeader("Last-Modified");
-         if (date && date != '') {
-         try {
-         date = new Date(date);
-         if (date.year !== 'undefined' && date.getDate() != today.getDate() && date.getMonth() != today.getMonth() && date.getYear() != today.getYear()) {
-         date = date.getFullYear() + '-' + (date.getMonth() + 1) + '-' + date.getDate();
-         item.setField('date', date);
-         item.save();
-         }
-         } catch (err) {
-         console.log('Could not set date "' + date + '": ' + err);
-         }
-         }
-         }
-         }
-         }
-         }
-         */
 
 // Initialize the utility
 window.addEventListener('load', function (e) {
