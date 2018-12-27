@@ -62,8 +62,7 @@ Zotero.RetracterZotero.init = function () {
 
     // Register the callback in Zotero as an item observer
     var notifierID = Zotero.Notifier.registerObserver(this.notifierCallback, ['sync']);
-    //var notifierItemChange = Zotero.Notifier.registerObserver(this.notifierItemCallback, ['collection', 'search', 'item', 'collection-item', 'item-tag', 'tag',
-    //    'group', 'relation', 'feed', 'feedItem']);
+    var notifierItemUpdateID = Zotero.Notifier.registerObserver(this.notifierItemUpdateCallback, ['item']);
 
     Zotero.debug('Retracters Plugin, grabbing retracted paper' + notifierID);
     //Zotero.debug('Retracters Plugin, grabbing retracted paper' + notifierItemChange);
@@ -105,10 +104,9 @@ Zotero.RetracterZotero.init = function () {
             // Check if selection has actually changed. The onselect event that calls this
             // can be called in various situations where the selection didn't actually change,
             // such as whenever selectEventsSuppressed is set to false.
-            var ids = selectedItems.map(item => item.id
-            )
-            ;
+            var ids = selectedItems.map(item => item.id);
             ids.sort();
+
             if (ids.length && Zotero.Utilities.arrayEquals(_lastSelectedItems, ids)) {
                 return false;
             }
@@ -253,41 +251,51 @@ Zotero.RetracterZotero.init = function () {
             Zotero.logError(e);
             this.displayErrorMessage();
             throw e;
-        }.bind(this)).finally(function () {
+        }.bind(this)).finally(async function () {
             try{
-                var item_box = document.getElementById('zotero-editpane-item-box');
+                let item_box = document.getElementById('zotero-editpane-item-box');
                 Zotero.debug("Retracter Document: " + JSON.stringify(item_box.item));
                 Zotero.debug("Retracter Item Type Id: " + item_box.item.itemTypeID);
 
-                Zotero.RetracterZotero.DB.queryAsync("SELECT * FROM retracted WHERE item_id=?",item_box.item.key).then(function(item_check) {
-                    if(item_check.length>0){
-                        // If item is retracted, set label on item info pane
-                        if(item_check[0]["retracted"]==="R"){
-                            var titleFieldID = Zotero.ItemFields.getFieldIDFromTypeAndBase(item_box.item.itemTypeID, 'title');
-                            var field = item_box._dynamicFields.getElementsByAttribute('fieldname', Zotero.ItemFields.getName(titleFieldID)).item(0);
-                            //var field = item_box.getElementsByAttribute('fieldname', "itemType").item(0);
-                            //Zotero.debug("field: " + JSON.stringify(field));
-                            let label = document.createElement("label");
-                            label.setAttribute('fieldname', "Retracted");
-                            label.setAttribute('value', "Retracted")
-                            label.setAttribute('style', "color:red")
-                            let valueElement = document.createElement("label");
-                            valueElement.setAttribute('fieldname', "RetractedVal");
-                            valueElement.setAttribute('value', "This Paper is Retracted")
-                            valueElement.setAttribute('style', "color:red")
-                            //valueElement.removeEventListener('click');
-                            //item_box.addDynamicRow(label,valueElement,field)
-                            /*
-                             var row = document.createElement("row");
-                             row.appendChild(label);
-                             row.appendChild(valueElement);
-                             item_box.insertBefore(row, field)
-                             */
-                            row = item_box.addDynamicRow(label, valueElement, field);
-                            //Zotero.debug("Row: " + label.toSource());
-                        }
+                let item_check = await Zotero.RetracterZotero.DB.queryAsync("SELECT * FROM retracted WHERE item_id=?",item_box.item.key);
+                if(item_check.length>0){
+                    // If item is retracted, set label on item info pane
+
+                    // add definition for retraction on title
+                    let retracted_on_title = false;
+                    let item_selected = JSON.parse(JSON.stringify(item_box.item));
+
+                    Zotero.debug("Retracter Item Title: " + item_selected.title);
+
+                    if (item_selected.title.toLowerCase().startsWith("retract")){
+                        retracted_on_title = true;
                     }
-                });
+
+                    if(item_check[0]["retracted"]==="R"||retracted_on_title){
+                        var titleFieldID = Zotero.ItemFields.getFieldIDFromTypeAndBase(item_box.item.itemTypeID, 'title');
+                        var field = item_box._dynamicFields.getElementsByAttribute('fieldname', Zotero.ItemFields.getName(titleFieldID)).item(0);
+                        //var field = item_box.getElementsByAttribute('fieldname', "itemType").item(0);
+                        //Zotero.debug("field: " + JSON.stringify(field));
+                        let label = document.createElement("label");
+                        label.setAttribute('fieldname', "Retracted");
+                        label.setAttribute('value', "Retracted")
+                        label.setAttribute('style', "color:red")
+                        let valueElement = document.createElement("label");
+                        valueElement.setAttribute('fieldname', "RetractedVal");
+                        valueElement.setAttribute('value', "This Paper is Retracted")
+                        valueElement.setAttribute('style', "color:red")
+                        //valueElement.removeEventListener('click');
+                        //item_box.addDynamicRow(label,valueElement,field)
+                        /*
+                         var row = document.createElement("row");
+                         row.appendChild(label);
+                         row.appendChild(valueElement);
+                         item_box.insertBefore(row, field)
+                         */
+                        row = item_box.addDynamicRow(label, valueElement, field);
+                        //Zotero.debug("Row: " + label.toSource());
+                    }
+                }
             }catch(err){
                     Zotero.debug("Retracter Fetch Item Error: "+err);
             }
@@ -302,13 +310,23 @@ Zotero.RetracterZotero.init = function () {
  using notifierCallback on item observer
  */
 
-Zotero.RetracterZotero.notifierItemCallback = {
-    notify: function (event, type, ids, extraData) {
-        Zotero.debug("Retracter item event: " + event);
-        Zotero.debug("Retracter item type: " + type);
-        Zotero.debug("Retracter item ids: " + ids);
+
+Zotero.RetracterZotero.notifierItemUpdateCallback = {
+    notify: async function (event, type, ids, extraData) {
+        Zotero.debug("Retracter item update event: " + event);
+        Zotero.debug("Retracter item update type: " + type);
+        Zotero.debug("Retracter item update ids: " + ids);
         //var item_box = document.getElementById("item-box");
         //Zotero.debug("Document: " + JSON.stringify(item_box));
+
+        if (event === "modify" || event == "add") {
+            let item = await Zotero.Items.get(ids[0]);
+            item = JSON.parse(JSON.stringify(item));
+            Zotero.debug("Retracted item update: " + JSON.stringify(item));
+            if (item.hasOwnProperty("DOI") && item.hasOwnProperty("title")) {
+                await Zotero.RetracterZotero.checkRetracted(item.key, item.title, item.DOI);
+            }
+        }
     }
 }
 
@@ -525,7 +543,7 @@ Zotero.RetracterZotero.checkRetracted = async function(itemId,title,doi) {
                 now.setDate(now.getDate() + 7);
 
                 // Update retracter cache
-                await Zotero.RetracterZotero.insertRetractedCache(title, find, find_from, now.getTime());
+                await Zotero.RetracterZotero.insertRetractedCache(title, doi, find, find_from, now.getTime());
                 // Update retracted
                 await Zotero.RetracterZotero.updateRetracted(itemId, find);
             }
