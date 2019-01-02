@@ -419,6 +419,16 @@ Zotero.RetracterZotero.insertRetractedCache= function(title,doi,retractedStatus,
     return Zotero.RetracterZotero.DB.queryAsync("INSERT INTO retracter_cache VALUES (?,?,?,?,?)",params)
 }
 
+Zotero.RetracterZotero.matchOnlyAlphabeticalValues= function(str1,str2){
+    let tStr1 = str1.toLowerCase().replace(/\W/g, '');
+    let tStr2 = str2.toLowerCase().replace(/\W/g, '');
+    return (tStr1===tStr2);
+}
+
+Zotero.RetracterZotero.onlyAlphabeticalValues= function(str1){
+    return str1.toLowerCase().replace(/\W/g, '');
+}
+
 /*
 Zotero.RetracterZotero.findFromPubmed = Zotero.Promise.coroutine(function* (title,doi){
      // Check Pubmed
@@ -455,7 +465,7 @@ Zotero.RetracterZotero.findFromPubmed = function(title,doi){
     var returnPromise = new Zotero.Promise(function(resolve,reject){
         const url = 'https://www.ncbi.nlm.nih.gov/pubmed/?term="'+title+'"';
 
-        var xhr = new XMLHttpRequest();
+        let xhr = new XMLHttpRequest();
         //xhr.open('POST', url, true);
         xhr.open('GET', url, true);
 
@@ -477,12 +487,13 @@ Zotero.RetracterZotero.findFromPubmed = function(title,doi){
 
                     let retractedFound = false;
                     let pubmedFound = false;
+                    let titleANOnly = Zotero.RetracterZotero.onlyAlphabeticalValues(title);
                     for(let i=0;i<rprts.length;i++){
                         // check the title, before and after
-                        let responseText = rprts[i].innerText;
+                        let responseText = Zotero.RetracterZotero.onlyAlphabeticalValues(rprts[i].innerText);
                         let responseLength = responseText.length;
-                        let titleLength = title.length;
-                        let titleIndex = responseText.indexOf(title);
+                        let titleLength = titleANOnly.length;
+                        let titleIndex = responseText.indexOf(titleANOnly);
                         // title not found, then just continue to the next rprt
                         if(titleIndex<0){
                             continue;
@@ -511,12 +522,22 @@ Zotero.RetracterZotero.findFromPubmed = function(title,doi){
     return returnPromise;
 };
 
+Zotero.RetracterZotero.findFromLocal = function(title,doi){
+    return local_data.filter(x => Zotero.RetracterZotero.onlyAlphabeticalValues(x) == Zotero.RetracterZotero.onlyAlphabeticalValues(title)).length > 0;
+};
+
 Zotero.RetracterZotero.syncApi = async function(title,doi){
     var find = "U";
     var find_from = "U";
     var now = new Date();
 
+    /*
     if (local_data.indexOf(title) >= 0) {
+        find = "R";
+        find_from = "L"
+    }
+    */
+    if (Zotero.RetracterZotero.findFromLocal(title)){
         find = "R";
         find_from = "L"
     }
@@ -543,7 +564,7 @@ Zotero.RetracterZotero.checkRetracted = async function(itemId,title,doi) {
         // if found, query return rows
         // Zotero.RetracterZotero.DB.queryAsync("CREATE TABLE retracted (item_id text,retracted integer)");
         //CREATE TABLE retracter_cache (title text,doi text,retracted_status text,derived_from text,expiration_date real)
-        if(item_check[0]["retracted"]=="U") {
+        //if(item_check[0]["retracted"]=="U") {
             // if unknown
             // look at the retraction cache
             let params = [title];
@@ -616,7 +637,7 @@ Zotero.RetracterZotero.checkRetracted = async function(itemId,title,doi) {
                 // Update retracted
                 await Zotero.RetracterZotero.updateRetracted(itemId, find);
             }
-        }
+        //}
     }else{
         // if not found in the item
         // check local data
