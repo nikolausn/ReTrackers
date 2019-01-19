@@ -318,7 +318,7 @@ Zotero.RetracterZotero.init = function () {
                         valueElement.setAttribute('fieldname', "RetractedVal");
                         //valueElement.setAttribute('value', "This Paper is Retracted")
                         valueElement.setAttribute('style', "color:red")
-                        valueElement.appendChild(document.createTextNode("This Document is Retracted "));
+                        valueElement.appendChild(document.createTextNode("This document has been Retracted "));
 
                         let newLink = document.createElement('label');
                         newLink.className = 'zotero-clicky';
