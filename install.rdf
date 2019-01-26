@@ -18,7 +18,11 @@
 				<em:name>Zotero</em:name>
 				<em:homepageURL>http://www.zotero.org</em:homepageURL>
 				<em:minVersion>3.0</em:minVersion>
+<<<<<<< HEAD
 				<em:maxVersion>5.0.*</em:maxVersion>
+=======
+				<em:maxVersion>4.0.*</em:maxVersion>
+>>>>>>> 8e10861... Update versions
 			</Description>
 		</em:requires>
     
@@ -34,7 +38,11 @@
 			<Description>
 				<em:id>zotero@chnm.gmu.edu</em:id>
 				<em:minVersion>3.0</em:minVersion>
+<<<<<<< HEAD
 				<em:maxVersion>5.0.*</em:maxVersion>
+=======
+				<em:maxVersion>4.0.*</em:maxVersion>
+>>>>>>> 8e10861... Update versions
 			</Description>
 		</em:targetApplication>
 	</Description>
