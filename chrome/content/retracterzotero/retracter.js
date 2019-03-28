@@ -93,7 +93,7 @@ Zotero.RetracterZotero.init = function () {
     Zotero.debug('Retracters Plugin, grabbing retracted paper' + notifierID);
     //Zotero.debug('Retracters Plugin, grabbing retracted paper' + notifierItemChange);
 
-    Zotero.debug('Retracters Local Data: '+local_data[0]);
+    //Zotero.debug('Retracters Local Data: '+local_data[0]);
 
     // Unregister callback when the window closes (important to avoid a memory leak)
     window.addEventListener('unload', function (e) {
@@ -477,7 +477,7 @@ Zotero.RetracterZotero.findFromPubmed = function(title,doi){
         xhr.onload = function () {
             if (xhr.readyState === xhr.DONE) {
                 if (xhr.status === 200) {
-                    //Zotero.debug("Retracter resp: "+xhr.response);
+                    Zotero.debug("Retracter resp: "+xhr.response);
                     //Zotero.debug("Retracter text: "+localResp.title+" "+xhr.responseText);
 
                     let parser = new DOMParser()
@@ -537,10 +537,18 @@ Zotero.RetracterZotero.syncApi = async function(title,doi){
         find_from = "L"
     }
     */
+
+    /*
+    Drop function to check from local title
+     */
+
+    /*
     if (Zotero.RetracterZotero.findFromLocal(title)){
         find = "R";
         find_from = "L"
     }
+    */
+
     //if not found in local, check pubmed
     if (find == "U") {
         var pubmedResult = await Zotero.RetracterZotero.findFromPubmed(title, doi);
