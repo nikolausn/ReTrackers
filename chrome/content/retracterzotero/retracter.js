@@ -296,9 +296,11 @@ Zotero.RetracterZotero.init = function () {
 
                     Zotero.debug("Retracter Item Title: " + item_selected.title);
 
+                    /*
                     if (item_selected.title.toLowerCase().startsWith("retract")){
                         retracted_on_title = true;
                     }
+                    */
 
                     let retracted_from = "U";
                     if(cache_check.length>0){
@@ -381,9 +383,13 @@ Zotero.RetracterZotero.notifierItemUpdateCallback = {
         if (event === "modify" || event == "add") {
             let item = await Zotero.Items.get(ids[0]);
             item = JSON.parse(JSON.stringify(item));
+            let itemDOI = null;
+            if(localResp.hasOwnProperty("DOI")){
+                itemDOI = localResp.DOI;
+            }
             Zotero.debug("Retracted item update: " + JSON.stringify(item));
-            if (item.hasOwnProperty("DOI") && item.hasOwnProperty("title")) {
-                await Zotero.RetracterZotero.checkRetracted(item.key, item.title, item.DOI);
+            if (item.hasOwnProperty("title")) {
+                await Zotero.RetracterZotero.checkRetracted(item.key, item.title, itemDOI);
             }
         }
     }
@@ -800,9 +806,14 @@ Zotero.RetracterZotero.notifierCallback = {
             Zotero.debug("Retracter title: " + localResp.title);
             Zotero.debug("fetch retraction data");
 
-            if (localResp.hasOwnProperty("DOI") && localResp.hasOwnProperty("title")) {
+            let itemDOI = null;
+            if(localResp.hasOwnProperty("DOI")){
+                itemDOI = localResp.DOI;
+            }
+
+            if (localResp.hasOwnProperty("title")) {
                 try {
-                    Zotero.RetracterZotero.checkRetracted(localResp.key, localResp.title, localResp.DOI);
+                    Zotero.RetracterZotero.checkRetracted(localResp.key, localResp.title, itemDOI);
                     /*
 
                      // Check the item with retracted local database
