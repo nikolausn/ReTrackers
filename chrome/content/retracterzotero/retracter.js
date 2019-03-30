@@ -610,6 +610,9 @@ Zotero.RetracterZotero.findFromPubmed = function(title,doi){
                                     let url = "https://www.ncbi.nlm.nih.gov"+advHyperLink[0].getAttribute("href");
                                     Zotero.debug("search Single Page Pubmed from result: " + url);
                                     retractedFound = await Zotero.RetracterZotero.findPubmedSinglePage(url, title);
+                                    if(retractedFound){
+                                        break;
+                                    }
                                 }
                             }
                         }
@@ -624,6 +627,9 @@ Zotero.RetracterZotero.findFromPubmed = function(title,doi){
                             let url = "https://www.ncbi.nlm.nih.gov"+advHyperLink[0].getAttribute("href");
                             Zotero.debug("search Single Page Pubmed from advanced box: " + url);
                             retractedFound = await Zotero.RetracterZotero.findPubmedSinglePage(url, title);
+                            if(retractedFound){
+                                break;
+                            }
                         }
                     }
                 }
