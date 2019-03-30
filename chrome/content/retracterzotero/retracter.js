@@ -435,6 +435,11 @@ Zotero.RetracterZotero.onlyAlphabeticalValues= function(str1){
     return str1.toLowerCase().replace(/\W/g, '');
 }
 
+Zotero.RetracterZotero.cleanForKeyword= function(str1){
+    // replace characters other than word digit and whitespace to a space
+    return str1.toLowerCase().replace(/[^\w|\d|\s]/g, ' ');
+}
+
 /*
 Zotero.RetracterZotero.findFromPubmed = Zotero.Promise.coroutine(function* (title,doi){
      // Check Pubmed
@@ -466,10 +471,198 @@ Zotero.RetracterZotero.findFromPubmed = Zotero.Promise.coroutine(function* (titl
 */
 
 
+Zotero.RetracterZotero.requestPage = async function(url) {
+    var returnPromise = new Zotero.Promise(function(resolve,reject){
+        let xhr = new XMLHttpRequest();
+        //xhr.open('POST', url, true);
+        xhr.open('GET', url, true);
+
+        // If specified, responseType must be empty string or "text"
+        xhr.responseType = 'text';
+        xhr.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
+
+
+        xhr.onload = function () {
+            if (xhr.readyState === xhr.DONE) {
+                if (xhr.status === 200) {
+                    resolve({"page": xhr.responseText});
+                }
+            }
+            resolve(false);
+        }
+        xhr.send(null);
+    });
+
+    return returnPromise;
+}
+
+Zotero.RetracterZotero.searchText = function(listText,text){
+    let retractedFound = false;
+    let titleANOnly = Zotero.RetracterZotero.onlyAlphabeticalValues(text);
+    let outputElement = [];
+    if(listText.length>0){
+        for(let i=0;i<listText.length;i++){
+            // check the title, before and after
+            let responseText = Zotero.RetracterZotero.onlyAlphabeticalValues(listText[i].innerText);
+            let responseLength = responseText.length;
+            let titleLength = titleANOnly.length;
+            let titleIndex = responseText.indexOf(titleANOnly);
+            // title not found, then just continue to the next rprt
+            if(titleIndex<0){
+                continue;
+            }
+
+            outputElement.push(listText[i])
+
+            let startCut = titleIndex;
+            let endCut = titleIndex+titleLength;
+            let checkText = responseText.substr(0,startCut)+responseText.substr(endCut,responseLength);
+            if(checkText.toLowerCase().indexOf("retract")>=0){
+                retractedFound = true;
+                // Retracted text found, break the loop
+                break;
+            }
+        }
+    }
+
+    return [retractedFound,outputElement]
+}
+
+Zotero.RetracterZotero.findPubmedSinglePage = async function(url,title){
+    let retractedFound=false;
+    Zotero.debug("search Single Page: " + url);
+    let searchPage1 = await Zotero.RetracterZotero.requestPage(url);
+    let parser = new DOMParser();
+    if(searchPage1){
+        let el = parser.parseFromString(searchPage1["page"], "text/xml");
+        let alertBox = el.getElementsByClassName("retracted-alert");
+        if (alertBox.length>0){
+            retractedFound=true;
+        }
+    }
+    return retractedFound;
+}
+
+
 Zotero.RetracterZotero.findFromPubmed = function(title,doi){
     // Check Pubmed
+    var returnPromise = new Zotero.Promise(async function(resolve,reject){
+        // Tokenize title
+
+        //Zotero.debug("Retracter test token search: " + titleSearch);
+
+        let searchKeywords = Zotero.RetracterZotero.cleanForKeyword(title);
+
+        const url = 'https://www.ncbi.nlm.nih.gov/pubmed/?term="'+searchKeywords+'"';
+        //const url = 'https://www.ncbi.nlm.nih.gov/pubmed/?term='+titleSearch+'';
+
+        Zotero.debug("Retracter search PUBMED: " + url);
+
+        let searchPage1 = await Zotero.RetracterZotero.requestPage(url);
+
+        let retractedFound = false;
+
+        if(searchPage1) {
+            let parser = new DOMParser();
+            let el = parser.parseFromString(searchPage1["page"], "text/xml");
+
+            //let titleANOnly = Zotero.RetracterZotero.onlyAlphabeticalValues(title);
+
+            // If it is in advance box
+            let advanced_box = el.getElementsByClassName("sensor");
+            if(advanced_box.length>0){
+                advanced_box = advanced_box[0].getElementsByTagName("p");
+            }
+            let advanced_result = Zotero.RetracterZotero.searchText(advanced_box,title);
+
+            // if retraction keyword found in advanced box
+            if (advanced_result[0]){
+                Zotero.debug("Retracted Pubmed found in advanced result");
+                retractedFound = true;
+            }else{
+                // no advanced box
+                if(advanced_result[1].length===0){
+                    // try looking on the find report page
+                    let rprts_box = el.getElementsByClassName("rslt");
+                    let rprts_result = Zotero.RetracterZotero.searchText(rprts_box,title);
+
+                    // if retraction keyword found in report result
+                    if(rprts_result[0]){
+                        Zotero.debug("Retracted Pubmed found in report result");
+                        retractedFound = true;
+                    }else{
+                        // There is no result box
+                        if(rprts_result[1].length===0){
+                            // Check alert box if it is one page case
+                            let alertBox = el.getElementsByClassName("retracted-alert");
+                            if (alertBox.length>0){
+                                Zotero.debug("Retracted Pubmed found in single page");
+                                retractedFound=true;
+                            }
+                        }else{
+                            // there are several page related to the title
+                            Zotero.debug("search Single Page Pubmed length: " + rprts_result[1].length + " element: "+rprts_result[1]);
+
+                            for(let i=0;i<rprts_result[1].length;i++){
+                                let advHyperLink = rprts_result[1][i].getElementsByTagName("a");
+                                if(advHyperLink.length>0){
+                                    // check retraction on page
+                                    let url = "https://www.ncbi.nlm.nih.gov"+advHyperLink[0].getAttribute("href");
+                                    Zotero.debug("search Single Page Pubmed from result: " + url);
+                                    retractedFound = await Zotero.RetracterZotero.findPubmedSinglePage(url, title);
+                                }
+                            }
+                        }
+                    }
+                }else{
+                    //there is an advanced box related to the title
+                    Zotero.debug("search Single Page Pubmed from length: " + advanced_result[1].length);
+                    for(let i=0;i<advanced_result[1].length;i++){
+                        let advHyperLink = advanced_result[1][i].getElementsByTagName("a");
+                        if(advHyperLink.length>0){
+                            // check retraction on page
+                            let url = "https://www.ncbi.nlm.nih.gov"+advHyperLink[0].getAttribute("href");
+                            Zotero.debug("search Single Page Pubmed from advanced box: " + url);
+                            retractedFound = await Zotero.RetracterZotero.findPubmedSinglePage(url, title);
+                        }
+                    }
+                }
+            }
+        }
+        resolve({"retracted": retractedFound});
+
+    });
+
+    return returnPromise;
+};
+
+Zotero.RetracterZotero.findFromPubmedOld = function(title,doi){
+    // Check Pubmed
     var returnPromise = new Zotero.Promise(function(resolve,reject){
+        // Tokenize title
+
+        /*
+        let yuhuTitle = title.split(" ");
+
+        //titleAlphaOnly = titleAlphaOnly.split(" ");
+
+        let titleSearch = ""
+        for(let i = 0; i < yuhuTitle.length; i++) {
+            let titleAlphaOnly = Zotero.RetracterZotero.onlyAlphabeticalValues(yuhuTitle[i]);
+            // Trim the excess whitespace.
+            titleSearch = titleSearch + titleAlphaOnly+"[Title]";
+            if (i<yuhuTitle.length-1){
+                titleSearch = titleSearch + "+AND+"
+            }
+        }
+        */
+
+        //Zotero.debug("Retracter test token search: " + titleSearch);
+
         const url = 'https://www.ncbi.nlm.nih.gov/pubmed/?term="'+title+'"';
+        //const url = 'https://www.ncbi.nlm.nih.gov/pubmed/?term='+titleSearch+'';
+
+        Zotero.debug("Retracter test token search: " + url);
 
         let xhr = new XMLHttpRequest();
         //xhr.open('POST', url, true);
@@ -483,35 +676,63 @@ Zotero.RetracterZotero.findFromPubmed = function(title,doi){
         xhr.onload = function () {
             if (xhr.readyState === xhr.DONE) {
                 if (xhr.status === 200) {
-                    Zotero.debug("Retracter resp: "+xhr.response);
+                    //Zotero.debug("Retracter resp: "+xhr.response);
                     //Zotero.debug("Retracter text: "+localResp.title+" "+xhr.responseText);
 
-                    let parser = new DOMParser()
+                    let parser = new DOMParser();
                     let el = parser.parseFromString(xhr.responseText, "text/xml");
 
-                    let rprts = el.getElementsByClassName("rprt");
 
                     let retractedFound = false;
-                    let pubmedFound = false;
+                    //let pubmedFound = false;
                     let titleANOnly = Zotero.RetracterZotero.onlyAlphabeticalValues(title);
-                    for(let i=0;i<rprts.length;i++){
-                        // check the title, before and after
-                        let responseText = Zotero.RetracterZotero.onlyAlphabeticalValues(rprts[i].innerText);
-                        let responseLength = responseText.length;
-                        let titleLength = titleANOnly.length;
-                        let titleIndex = responseText.indexOf(titleANOnly);
-                        // title not found, then just continue to the next rprt
-                        if(titleIndex<0){
-                            continue;
-                        }
 
-                        let startCut = titleIndex;
-                        let endCut = titleIndex+titleLength;
-                        let checkText = responseText.substr(0,startCut)+responseText.substr(endCut,responseLength);
-                        if(checkText.toLowerCase().indexOf("retract")>=0){
-                            retractedFound = true;
-                            // Retracted text found, break the loop
-                            break;
+                    let advanced_box = el.getElementsByClassName("sensor");
+                    if(advanced_box.length > 0){
+                        let rpr_title = advanced_box[0].getElementsByTagName("p");
+                        for(let i=0;i<rpr_title.length;i++){
+                            // check the title, before and after
+                            let responseText = Zotero.RetracterZotero.onlyAlphabeticalValues(rpr_title[i].innerText);
+                            let responseLength = responseText.length;
+                            let titleLength = titleANOnly.length;
+                            let titleIndex = responseText.indexOf(titleANOnly);
+                            // title not found, then just continue to the next rprt
+                            if(titleIndex<0){
+                                continue;
+                            }
+
+                            let startCut = titleIndex;
+                            let endCut = titleIndex+titleLength;
+                            let checkText = responseText.substr(0,startCut)+responseText.substr(endCut,responseLength);
+                            if(checkText.toLowerCase().indexOf("retract")>=0){
+                                retractedFound = true;
+                                // Retracted text found, break the loop
+                                break;
+                            }
+                        }
+                    }
+
+                    if(!retractedFound) {
+                        let rprts = el.getElementsByClassName("rprt");
+                        for (let i = 0; i < rprts.length; i++) {
+                            // check the title, before and after
+                            let responseText = Zotero.RetracterZotero.onlyAlphabeticalValues(rprts[i].innerText);
+                            let responseLength = responseText.length;
+                            let titleLength = titleANOnly.length;
+                            let titleIndex = responseText.indexOf(titleANOnly);
+                            // title not found, then just continue to the next rprt
+                            if (titleIndex < 0) {
+                                continue;
+                            }
+
+                            let startCut = titleIndex;
+                            let endCut = titleIndex + titleLength;
+                            let checkText = responseText.substr(0, startCut) + responseText.substr(endCut, responseLength);
+                            if (checkText.toLowerCase().indexOf("retract") >= 0) {
+                                retractedFound = true;
+                                // Retracted text found, break the loop
+                                break;
+                            }
                         }
                     }
 
@@ -802,7 +1023,7 @@ Zotero.RetracterZotero.notifierCallback = {
                 response => {
                 var localResp = JSON.parse(JSON.stringify(response));
             //Zotero.debug("Retracter fetching item: " + response.toSource());
-            Zotero.debug("Retracter fetching item: " + JSON.stringify(localResp));
+            //Zotero.debug("Retracter fetching item: " + JSON.stringify(localResp));
             Zotero.debug("Retracter title: " + localResp.title);
             Zotero.debug("fetch retraction data");
 
