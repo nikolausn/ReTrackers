@@ -3,8 +3,8 @@
 		xmlns:em="http://www.mozilla.org/2004/em-rdf#">
 	
 	<Description about="urn:mozilla:install-manifest">
-		<em:id>retracter@illinois.edu</em:id>
-		<em:name>Retracter Plugin for Zotero</em:name>
+		<em:id>retrackers@illinois.edu</em:id>
+		<em:name>Retrackers Plugin for Zotero</em:name>
 		<em:version>1.0.1.SVN</em:version>
 		<em:description>Plugin for checking retracted paper</em:description>
 		<em:creator>ISchool @UIUC</em:creator>
