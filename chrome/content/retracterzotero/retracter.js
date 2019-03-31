@@ -43,7 +43,7 @@ Zotero.RetracterZotero.init = function () {
     try {
         // init database
         Zotero.DataDirectory._dir = Zotero.DataDirectory.defaultDir;
-        this.DB = new Zotero.DBConnection('retracters');
+        this.DB = new Zotero.DBConnection('retrackersv101');
         //Zotero.debug("retract aha: "+this.DB.tableExists('retracted'));
 
         // Create retracted table
