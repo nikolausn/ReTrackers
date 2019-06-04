@@ -42,7 +42,6 @@ Zotero.RetracterZotero.resetState = function () {
 Zotero.RetracterZotero.init = function () {
     try {
         // init database
-        Zotero.DataDirectory._dir = Zotero.DataDirectory.defaultDir;
         this.DB = new Zotero.DBConnection('retrackersv101');
         //Zotero.debug("retract aha: "+this.DB.tableExists('retracted'));
 
@@ -94,13 +93,19 @@ Zotero.RetracterZotero.init = function () {
     //Zotero.debug('Retracters Plugin, grabbing retracted paper' + notifierItemChange);
 
     //Zotero.debug('Retracters Local Data: '+local_data[0]);
-
     // Unregister callback when the window closes (important to avoid a memory leak)
     window.addEventListener('unload', function (e) {
         Zotero.RetracterZotero.DB.closeDatabase();
         Zotero.Notifier.unregisterObserver(notifierID);
         Zotero.Notifier.unregisterObserver(notifierItemUpdateID);
     }, false);
+
+
+    // adapted from the original ZoteroPane.js
+    //https://github.com/zotero/zotero/blob/master/chrome/content/zotero/zoteroPane.js
+
+    // look at different approach that we can use
+    // maybe using listener
 
     ZoteroPane_Local.itemSelected = function (event) {
         Zotero.debug("Retracter: new item selected event");
