@@ -45,7 +45,8 @@ Zotero.RetracterZotero.init = function () {
         //Zotero.debug("Dir: "+Zotero.DataDirectory._dir);
         //Zotero.debug("Default Dir: "+Zotero.DataDirectory.defaultDir);
         //Zotero.DataDirectory._dir = Zotero.DataDirectory.defaultDir;
-        this.DB = new Zotero.DBConnection(Zotero.DataDirectory._dir+'/retrackersv101.sqlite');
+        Zotero.debug("Data Directory: "+Zotero.DataDirectory._dir+'/retrackersv101.sqlite');
+        Zotero.RetracterZotero.DB = new Zotero.DBConnection(Zotero.DataDirectory._dir+'/retrackersv101.sqlite');
         //Zotero.debug("retract aha: "+this.DB.tableExists('retracted'));
 
         // Create retracted table
@@ -105,7 +106,13 @@ Zotero.RetracterZotero.init = function () {
         Zotero.Notifier.unregisterObserver(notifierItemSelect);
     }, false);
 
+
+    /* add event handler for items-tree select */
     let itemsTree = document.getElementById('zotero-items-tree');
+    //let itemBox = document.getElementById('zotero-editpane-item-box');
+
+    //let itemBox = document.getElementById('item-box');
+
     let handler = async function(){
         Zotero.debug("Retracker: an item  got selected");
 
@@ -114,14 +121,12 @@ Zotero.RetracterZotero.init = function () {
             Zotero.debug("Retracter Document: " + JSON.stringify(item_box.item));
             Zotero.debug("Retracter Item Type Id: " + item_box.item.itemTypeID);
 
-            let item_check = await Zotero.RetracterZotero.DB.queryAsync("SELECT * FROM retracted WHERE item_id=?", item_box.item.key);
+
+            //let item_check = await Zotero.RetracterZotero.DB.queryAsync("SELECT * FROM retracted WHERE item_id=?", item_box.item.key);
+
+            let item_check = await Zotero.RetracterZotero.DB.queryAsync("SELECT * FROM retracted WHERE item_id=?", ZoteroPane_Local.getSelectedItems()[0].key);
 
             // Test zotero collections tree
-
-
-
-
-
 
             /*
             let coll_tree = document.getElementById('zotero-collections-tree').view
@@ -173,11 +178,21 @@ Zotero.RetracterZotero.init = function () {
                 }
 
                 if (item_check[0]["retracted"] === "R" || retracted_on_title) {
+                    /* check if there is already retracted label*/
+                    let retractedLabel = document.getElementById('retracker-label-retracted');
+
+                    //Zotero.debug("retractedLabel: "+JSON.stringify(retractedLabel));
+
+                    if (retractedLabel!==null) {
+                        return;
+                    }
+
                     let titleFieldID = Zotero.ItemFields.getFieldIDFromTypeAndBase(item_box.item.itemTypeID, 'title');
                     let field = item_box._dynamicFields.getElementsByAttribute('fieldname', Zotero.ItemFields.getName(titleFieldID)).item(0);
                     //var field = item_box.getElementsByAttribute('fieldname', "itemType").item(0);
                     //Zotero.debug("field: " + JSON.stringify(field));
                     let label = document.createElement("label");
+                    label.setAttribute("id", "retracker-label-retracted");
                     label.setAttribute('fieldname', "Retracted");
                     label.setAttribute('value', "Retracted")
                     label.setAttribute('style', "color:red")
@@ -220,6 +235,7 @@ Zotero.RetracterZotero.init = function () {
                      */
                     row = item_box.addDynamicRow(label, valueElement, field);
                     //Zotero.debug("Row: " + label.toSource());
+
                 }
             }
         } catch (err) {
@@ -229,13 +245,7 @@ Zotero.RetracterZotero.init = function () {
     }
 
     itemsTree.addEventListener('select',handler);
-
-
-    // adapted from the original ZoteroPane.js
-    //https://github.com/zotero/zotero/blob/master/chrome/content/zotero/zoteroPane.js
-
-    // look at different approach that we can use
-    // maybe using listener
+    //itemBox.addEventListener('blur',handler);
 
 };
 
