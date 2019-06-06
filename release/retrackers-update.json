@@ -1,12 +1,12 @@
 {
   "addons": {
-    "{ec8121f1-c98b-473d-9b0e-13a3a9e75185}": {
+    "retrackers@illinois.edu": {
       "updates": [
         { "version": "1.0.1.SVN",
-          "update_link": "https://raw.githubusercontent.com/nikolausn/ReTrackers/blob/issue-code-fix/release/zotero-retrackers-1.0.1.SVN.xpi" },
+          "update_link": "https://raw.githubusercontent.com/nikolausn/ReTrackers/blob/issue-code-fix/release/zotero-retrackers-1.0.1.xpi" },
         { "version": "1.0.2.SVN",
-          "update_link": "https://raw.githubusercontent.com/nikolausn/ReTrackers/blob/issue-code-fix/release/zotero-retrackers-1.0.2.SVN.xpi",
-          "update_hash": "sha256:3138b4760aaf3e47bc1b818d0e797de002b85d22356b6dfb743d3a7ab315ba44" }
+          "update_link": "https://raw.githubusercontent.com/nikolausn/ReTrackers/blob/issue-code-fix/release/zotero-retrackers-1.0.2.xpi",
+          "update_hash": "sha256:5770757baace1cf0dfdd3fd8b93bf726bfdb02e37eb39004ac69a533278a2fd0" }
       ]
     }
   }
