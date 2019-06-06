@@ -1,14 +1,15 @@
 <?xml version="1.0"?>
+<!-- adapted from zotero helloword plugin example https://github.com/zotero/zotero-hello-world -->
 <RDF xmlns="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 		xmlns:em="http://www.mozilla.org/2004/em-rdf#">
 	
 	<Description about="urn:mozilla:install-manifest">
 		<em:id>retrackers@illinois.edu</em:id>
 		<em:name>Retrackers Plugin for Zotero</em:name>
-		<em:version>1.0.1.SVN</em:version>
+		<em:version>1.0.2.SVN</em:version>
 		<em:description>Plugin for checking retracted paper</em:description>
 		<em:creator>ISchool @UIUC</em:creator>
-		<em:updateURL></em:updateURL>
+		<em:updateURL>https://raw.githubusercontent.com/nikolausn/ReTrackers/issue-code-fix/release/retrackers-update.json</em:updateURL>
 		<em:type>2</em:type> <!-- type=extension -->
 		
 		<!-- Requires Zotero -->
@@ -25,7 +26,7 @@
 		<!-- Requires Firefox or Zotero Standalone -->
 		<em:targetApplication>
 			<Description>
-				<em:id>{ec8030f7-c20a-464f-9b0e-13a3a9e97384}</em:id>
+				<em:id>{ec8121f1-c98b-473d-9b0e-13a3a9e75185}</em:id>
 				<em:minVersion>17.0</em:minVersion>
 				<em:maxVersion>23.*</em:maxVersion>
 			</Description>
