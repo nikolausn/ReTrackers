@@ -85,6 +85,24 @@ Zotero.RetracterZotero.init = function () {
             }
             ;
         });
+
+        // Add list retracted articles button
+        let progressQueueButtons = document.getElementById('zotero-items-toolbar');
+        //let progressQueues = Zotero.ProgressQueues.getAll();
+
+        let button = document.createElement('toolbarbutton');
+        button.id = 'zotero-retracker-list' ;
+        button.class = 'zotero-tb-button' ;
+        button.tooltiptext = 'list retracted articles';
+        button.type="menu";
+        //button.type = 'menu';
+        button.addEventListener('click', function () {
+            //Zotero.ProgressQueues.get(progressQueue.getID()).getDialog().open();
+            Zotero.debug("List all retracted papers clicked");
+        });
+
+        progressQueueButtons.appendChild(button);
+
     } catch (err) {
         Zotero.debug("Retracters: Error create table " + err);
     }
