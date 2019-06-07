@@ -6,7 +6,7 @@
 	<Description about="urn:mozilla:install-manifest">
 		<em:id>retrackers@illinois.edu</em:id>
 		<em:name>Retrackers Plugin for Zotero</em:name>
-		<em:version>1.0.3</em:version>	
+		<em:version>1.0.2</em:version>
 		<em:description>Plugin for checking retracted paper</em:description>
 		<em:creator>ISchool @UIUC</em:creator>
 		<em:updateURL>https://raw.githubusercontent.com/nikolausn/ReTrackers/issue-code-fix/release/retrackers-update.json</em:updateURL>
