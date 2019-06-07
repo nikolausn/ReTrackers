@@ -9,7 +9,7 @@
 		<em:version>1.0.2</em:version>
 		<em:description>Plugin for checking retracted paper</em:description>
 		<em:creator>ISchool @UIUC</em:creator>
-		<em:updateURL>https://raw.githubusercontent.com/nikolausn/ReTrackers/issue-code-fix/release/retrackers-update.json</em:updateURL>
+		<em:updateURL>https://raw.githubusercontent.com/nikolausn/ReTrackers/master/release/retrackers-update.json</em:updateURL>
 		<em:type>2</em:type> <!-- type=extension -->
 		
 		<!-- Requires Zotero -->
