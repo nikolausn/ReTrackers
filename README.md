@@ -2,6 +2,8 @@
 
 Retrackers is a zotero plugin for tracking retracted paper.
 
+The Plugin is still under development and we are still improving and testing different approaches on improving the idea to give information about retracted paper to the user.
+
 To install the plugin, zotero user can download the xpi in this github directory:
 https://github.com/nikolausn/ReTrackers/blob/master/release/zotero-retrackers-1.0.2.xpi?raw=true
 
