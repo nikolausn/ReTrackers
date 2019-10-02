@@ -33,7 +33,10 @@ https://github.com/zotero/zotero
 https://developer.mozilla.org/en-US/docs/Mozilla/Developer_guide
 
 
+Related paper:
 
-
-
+Yi-Yun Cheng, Nikolaus Parulian, Tzu-Kun Hsiao, Ly Dinh, Janina Sarol, 
+Jodi Schneider. “ReTracker: actively and automatically matching 
+retraction metadata in Zotero”. In ASIS&T 2019.
+http://jodischneider.com/pubs/asist2019retracker.pdf
 
